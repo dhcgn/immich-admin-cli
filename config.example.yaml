@@ -1,0 +1,5 @@
+# Template — copy to config.prod.yaml and fill in your values.
+# config.prod.yaml is gitignored because it contains sensitive data.
+# Server origin only (no /api suffix — the client appends it).
+server: https://immich.example.com/
+api_key: YOUR_API_KEY_HERE
