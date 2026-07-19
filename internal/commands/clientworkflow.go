@@ -37,7 +37,7 @@ func replaceAssetCommand() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:  "replace-file",
-				Usage: "read asset-id;new-file-path pairs from `FILE`, one per line ('-' for stdin; '#' starts a comment)",
+				Usage: "read asset-id;new-file-path pairs from `FILE`, one per line ('-' for stdin; '#' or '//' starts a comment)",
 			},
 			&cli.BoolFlag{
 				Name:  "dont-remove-original-file",
@@ -177,7 +177,8 @@ func parseReplacePair(line string) (workflows.ReplacePair, error) {
 }
 
 // readReplacePairLines reads one "assetId;newFilePath" line per line from
-// path ("-" = stdin). Blank lines and lines starting with '#' are skipped.
+// path ("-" = stdin). Blank lines and comment lines (starting with '#' or
+// '//') are skipped.
 func readReplacePairLines(path string) ([]string, error) {
 	var r io.Reader
 	if path == "-" {
@@ -195,7 +196,7 @@ func readReplacePairLines(path string) ([]string, error) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
+		if isBlankOrComment(line) {
 			continue
 		}
 		lines = append(lines, line)
