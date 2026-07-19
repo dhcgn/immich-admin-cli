@@ -31,8 +31,12 @@ jobs:
             echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           else
-            # Beta release from dev: latest tag + beta suffix (unique per run).
-            LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+            # Beta release from dev: latest STABLE tag + beta suffix (unique per run).
+            # Repo-wide highest v* tag, excluding beta tags — git describe would
+            # find the previous beta tag in dev's ancestry, and stable tags on
+            # main's merge commits are not ancestors of dev at all.
+            LATEST=$(git tag -l 'v*' --sort=-v:refname | grep -v -- '-beta' | head -n1)
+            LATEST=${LATEST:-v0.0.0}
             echo "version=${LATEST}-beta.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           fi
