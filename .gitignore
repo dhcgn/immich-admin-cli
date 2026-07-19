@@ -21,3 +21,6 @@ config*.yaml
 .idea/
 .serena/
 .prod-test-data/
+
+# Downloaded asset output (e.g. `assets download-original --out-dir out`)
+/out/

@@ -32,6 +32,7 @@ func Assets() *cli.Command {
 				},
 				Action: assetsInfo,
 			},
+			assetsDownloadCommand(),
 		},
 	}
 }
