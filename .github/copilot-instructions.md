@@ -152,3 +152,49 @@ How the two generators work — important when touching the spec, the generated 
 - Version, commit, and build date are injected at build time via `-ldflags "-X main.version=… -X main.commit=… -X main.date=…"` into `cmd/immich-admin/main.go`; shown by `immich-admin --version`.
 - CI (`.github/workflows/ci.yml`): fmt/build/vet/test + generated-code freshness check on pushes/PRs to `main` and `dev`.
 - Releases (`.github/workflows/release.yml`): a `v*` tag on `main` produces a stable release; every push to `dev` produces a beta prerelease versioned `<latest-tag>-beta.<run-number>`. Binaries are cross-compiled for linux/darwin/windows.
+
+## Branching & Release Workflow
+
+Flow: **feature branch → PR into `dev` (beta) → PR `dev` into `main` + tag (stable)**.
+
+Rules:
+
+- **Branch from `dev`, never from `main`** — `main` may lag behind. Feature branches are named `feature/<name>` and deleted at merge; `dev` and `main` are permanent.
+- **The tag makes the stable release, not the merge.** Merging `dev`→`main` only runs CI; pushing a `v*` tag on `main` triggers the Release workflow.
+- Before every push, run the local CI equivalent: `go generate ./... && go build ./... && go test ./... && go vet ./...` — and commit whatever `go generate` changed (README table, generated client), or CI's freshness check fails.
+- If `main` ever receives a direct hotfix, sync it back: `git checkout dev && git merge origin/main && git push`.
+
+### 1. Start a feature (from fresh `dev`)
+
+```sh
+git checkout dev && git pull origin dev
+git checkout -b feature/<name>
+# work, commit, then local CI check (see rules above)
+```
+
+### 2. Feature → dev (triggers beta prerelease)
+
+```sh
+git push -u origin feature/<name>
+gh pr create --base dev --title "<title>"
+gh pr checks --watch                 # wait for CI
+gh pr merge --merge --delete-branch  # merge push to dev builds v<latest>-beta.N
+gh run list --branch dev --limit 2   # verify Release run; gh release list shows the beta
+```
+
+Repeat 1–2 per feature; each merge to `dev` produces a new beta to test.
+
+### 3. dev → main + tag (stable release, when betas are good)
+
+```sh
+git checkout dev && git pull
+gh pr create --base main --head dev --title "Release vX.Y.Z"
+gh pr checks --watch
+gh pr merge --merge                  # do NOT delete dev
+git fetch origin main
+git tag vX.Y.Z origin/main           # tag the merge commit on main
+git push origin vX.Y.Z              # ← THIS triggers the stable release
+gh release view vX.Y.Z               # verify; polish notes: gh release edit vX.Y.Z --notes-file <file>
+```
+
+After tagging `vX.Y.Z`, subsequent dev betas automatically become `vX.Y.Z-beta.N`.

@@ -4,6 +4,9 @@ on:
   push:
     tags: ["v*"] # stable release: push a tag like v1.2.3 on main
     branches: [dev] # beta release: every push to dev
+    # Skip beta builds for docs-only pushes. Note: GitHub does not evaluate
+    # path filters for tag pushes, so tagged stable releases always run.
+    paths-ignore: ["**.md"]
 
 permissions:
   contents: write # create releases and (for betas) tags
