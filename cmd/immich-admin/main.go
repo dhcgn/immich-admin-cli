@@ -33,6 +33,7 @@ func main() {
 		Commands: []*cli.Command{
 			commands.Assets(),
 			commands.Users(),
+			commands.ClientWorkflow(),
 		},
 	}
 
