@@ -1,7 +1,17 @@
 ---
 applyTo: "**/*"
 ---
+
+## Setup
+
+`rtk` is installed at `C:\tools\rtk.exe`. Before running any `rtk`-prefixed command in a shell session, alias it first:
+
+```powershell
+Set-Alias rtk "C:\tools\rtk.exe"
+```
+
 <!-- rtk-instructions v2 -->
+
 # RTK — Token-Optimized CLI
 
 **rtk** is a CLI proxy that filters and compresses command outputs, saving 60-90% tokens.

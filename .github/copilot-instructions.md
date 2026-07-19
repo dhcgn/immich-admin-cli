@@ -156,6 +156,8 @@ How the two generators work — important when touching the spec, the generated 
 
 ## Branching & Release Workflow
 
+**Never assume an implementation task should end in a PR.** Only create branches, commit, push, or open a PR when the user has explicitly asked for that (or it's unambiguous from context, e.g. they asked to "ship"/"release" something). Otherwise implement and validate the change in the working tree/current branch and leave committing/branching/PR creation to the user. If it's unclear whether a PR is wanted, ask before pushing or opening one.
+
 Flow: **feature branch → PR into `dev` (beta) → PR `dev` into `main` + tag (stable)**.
 
 Rules:
