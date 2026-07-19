@@ -1,5 +1,12 @@
 # immich-admin-cli
 
+[![Build](https://img.shields.io/github/actions/workflow/status/dhcgn/immich-admin-cli/ci.yml?branch=main)](https://github.com/dhcgn/immich-admin-cli/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/dhcgn/immich-admin-cli)](https://github.com/dhcgn/immich-admin-cli/releases/latest)
+[![Go version](https://img.shields.io/github/go-mod/go-version/dhcgn/immich-admin-cli)](go.mod)
+[![Go Report Card](https://goreportcard.com/badge/github.com/dhcgn/immich-admin-cli)](https://goreportcard.com/report/github.com/dhcgn/immich-admin-cli)
+[![Downloads](https://img.shields.io/github/downloads/dhcgn/immich-admin-cli/total)](https://github.com/dhcgn/immich-admin-cli/releases)
+[![License](https://img.shields.io/github/license/dhcgn/immich-admin-cli)](LICENSE)
+
 > [!WARNING]
 > **No warranty. Use at your own risk.**
 > This tool performs bulk and destructive operations (deleting, replacing, and re-encoding assets) directly against your Immich server. A bug, a wrong flag, or an unexpected server response **can cause permanent data loss**. Always have a verified backup, test against non-critical data first, and read what a command will do (`--dry-run`) before running it. This project is not affiliated with the Immich project.
@@ -55,6 +62,38 @@ If the uploaded file's checksum matches an existing asset (Immich reports it as 
 3. **Replace** the original via the replace-asset steps above
 
 **Requirements:** the re-encode workflows need the external encoders (`cjxl`, `cjpegli`) available on `PATH` or configured in the config file.
+
+## Sample Use Cases
+
+### I imported some corrupt images, now I want to replace them, but keep all metadata and albums
+
+**1. Get information about one image**
+
+```console
+> immich-admin.exe assets info f63543bb-21bd-4b2a-9f7b-80ee7ef8d1ca
+ID:        f63543bb-21bd-4b2a-9f7b-80ee7ef8d1ca
+Name:      DSC_4466_DxO.jpg
+Type:      IMAGE
+Size:      667.4 KiB
+Dimension: 4895x3268
+Captured:  2018-07-06 10:54:03
+Path:      /data/library/daniel/2018-06-20 Vacation/DSC_4466.jpg
+Flags:     favorite=false archived=false trashed=false offline=false
+```
+
+**2. Replace one or multiple images**
+
+```console
+> immich-admin.exe cw replace-asset --replace-file ids.txt
+```
+
+`ids.txt` (format `assetId;newFilePath`, one pair per line):
+
+```
+f63543bb-21bd-4b2a-9f7b-80ee7ef8d1ca;new-image.jpg
+```
+
+This uploads `new-image.jpg` as a new asset, verifies it, copies the original's albums/favorite/shared-link/sidecar/stack metadata onto it, and moves the corrupt original to the trash — see [`client-workflow replace-asset`](#client-workflow-replace-asset-alias-cw) above for the full step-by-step and all available flags.
 
 ## API Coverage
 
