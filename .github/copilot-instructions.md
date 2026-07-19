@@ -83,6 +83,7 @@ go generate ./...      # regenerate the client (oapi-codegen) AND the README API
 go build ./...
 go test ./...
 go vet ./...
+go fix ./...    # check for outdated API usage that should be modernized
 ```
 
 ## Conventions
@@ -161,7 +162,7 @@ Rules:
 
 - **Branch from `dev`, never from `main`** — `main` may lag behind. Feature branches are named `feature/<name>` and deleted at merge; `dev` and `main` are permanent.
 - **The tag makes the stable release, not the merge.** Merging `dev`→`main` only runs CI; pushing a `v*` tag on `main` triggers the Release workflow.
-- Before every push, run the local CI equivalent: `go generate ./... && go build ./... && go test ./... && go vet ./...` — and commit whatever `go generate` changed (README table, generated client), or CI's freshness check fails.
+- Before every push, run the local CI equivalent: `go generate ./... && go build ./... && go test ./... && go vet ./... && go fix ./...` — and commit whatever `go generate` changed (README table, generated client), or CI's freshness check fails.
 - If `main` ever receives a direct hotfix, sync it back: `git checkout dev && git merge origin/main && git push`.
 
 ### 1. Start a feature (from fresh `dev`)
