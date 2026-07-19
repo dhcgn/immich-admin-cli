@@ -30,7 +30,7 @@ func newClient(cmd *cli.Command) (*client.Client, error) {
 func idsFileFlag() cli.Flag {
 	return &cli.StringFlag{
 		Name:  "ids-file",
-		Usage: "read IDs from `FILE`, one UUID per line ('-' for stdin; '#' starts a comment)",
+		Usage: "read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)",
 	}
 }
 
@@ -63,7 +63,7 @@ func collectIDs(cmd *cli.Command) ([]openapi_types.UUID, error) {
 }
 
 // readIDLines reads one ID per line from path ("-" = stdin). Blank lines and
-// lines starting with '#' are skipped.
+// comment lines (starting with '#' or '//') are skipped.
 func readIDLines(path string) ([]string, error) {
 	var r io.Reader
 	if path == "-" {
@@ -81,7 +81,7 @@ func readIDLines(path string) ([]string, error) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
+		if isBlankOrComment(line) {
 			continue
 		}
 		ids = append(ids, line)
@@ -90,6 +90,14 @@ func readIDLines(path string) ([]string, error) {
 		return nil, fmt.Errorf("reading ids from %q: %w", path, err)
 	}
 	return ids, nil
+}
+
+// isBlankOrComment reports whether a trimmed line from an input file should
+// be skipped: empty, or a comment starting with '#' or '//'. Shared by every
+// line-oriented file reader (--ids-file, --replace-file, ...) so comment
+// syntax stays consistent across the CLI.
+func isBlankOrComment(line string) bool {
+	return line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//")
 }
 
 // formatBytes renders an optional byte count human-readably ("unlimited" when nil).
