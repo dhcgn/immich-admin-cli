@@ -1,0 +1,23 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/immich-admin
+
+# Test & coverage
+*.test
+*.out
+coverage.html
+
+# Config files contain sensitive data (server URL, API key).
+# Only the example template is committed.
+config*.yaml
+!config.example.yaml
+
+# IDE / tooling
+.vscode/
+.idea/
+.serena/
+.prod-test-data/
