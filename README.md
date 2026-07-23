@@ -25,6 +25,7 @@ All workflows follow the same safety model: `--dry-run` shows what would happen 
 | Status | Command | Description |
 |:------:|---------|-------------|
 | ✅ done | `client-workflow replace-asset` | Replace an existing asset with a new file, keeping its metadata |
+| ✅ done | `client-workflow tag-delete` | Delete tags whose full path matches an include/exclude regex |
 | ⏳ planned | `client-workflow reencode-jxl` | Re-encode assets to JPEG XL (`cjxl`), then replace the originals |
 | ⏳ planned | `client-workflow reencode-jpegli` | Re-encode assets with jpegli (`cjpegli`), then replace the originals |
 
@@ -63,6 +64,24 @@ If the uploaded file's checksum matches an existing asset (Immich reports it as 
 
 **Requirements:** the re-encode workflows need the external encoders (`cjxl`, `cjpegli`) available on `PATH` or configured in the config file.
 
+### `client-workflow tag-delete` (alias `cw`)
+
+Bulk-delete tags selected by regex:
+
+1. **Fetch** all tags (`GET /tags`)
+2. **Filter** by `--include` / `--exclude` regexes, matched against each tag's **full path** (`Value`, e.g. `Travel/2024`)
+3. **Preview** — print every tag that would be deleted
+4. **Delete** the matched tags (`DELETE /tags/{id}`)
+
+```sh
+# Delete every tag EXCEPT those whose path contains "immich-go"
+immich-admin client-workflow tag-delete --exclude "immich-go" --dry-run
+```
+
+Flags: `--include REGEX` (default: match all), `--exclude REGEX`, `--dry-run`, `--yes` (skip the confirmation prompt). Filters are passed as flags only — stray positional arguments are rejected so a typo like `exclude` (instead of `--exclude`) fails loudly instead of matching everything.
+
+> ⚠️ Unlike the asset workflows, tag deletion is **permanent** — the Tags API has no trash. Deleting a parent tag also deletes its child tags server-side. Always run with `--dry-run` first.
+
 ## Sample Use Cases
 
 ### I imported some corrupt images, now I want to replace them, but keep all metadata and albums
@@ -94,6 +113,23 @@ f63543bb-21bd-4b2a-9f7b-80ee7ef8d1ca;new-image.jpg
 ```
 
 This uploads `new-image.jpg` as a new asset, verifies it, copies the original's albums/favorite/shared-link/sidecar/stack metadata onto it, and moves the corrupt original to the trash — see [`client-workflow replace-asset`](#client-workflow-replace-asset-alias-cw) above for the full step-by-step and all available flags.
+
+### I imported photos with immich-go and want to clean out every tag except the immich-go ones
+
+immich-go creates its own tags (e.g. `{immich-go}` and dated sub-tags like `{immich-go}/2026-07-23 18:50:54`). To remove all your other tags but keep those, exclude anything whose path contains `immich-go`:
+
+```console
+> immich-admin.exe cw tag-delete --exclude "immich-go" --dry-run
+117 tag(s) would be deleted:
+  2ce9dc42-edc3-41af-ad02-4cb16035a65d  2026
+  44dc4fbc-7732-4e2f-82ac-649d53a8c6df  Amy
+  ...
+Warning: deletion is PERMANENT (tags have no trash) and deleting a parent tag also deletes its children.
+```
+
+`--dry-run` only previews the selection. The `{immich-go}` tags are kept because their full path contains `immich-go`; everything else is listed for deletion. Remove `--dry-run` (and add `--yes` to skip the prompt) to actually delete them. See [`client-workflow tag-delete`](#client-workflow-tag-delete-alias-cw) above for all flags.
+
+> Note: `--exclude "immich-go"` is a **regex**, matched as a substring of the full tag path. To match "contains", write the literal text (`immich-go`), not a glob like `*immich-go*`.
 
 ## API Coverage
 
