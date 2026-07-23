@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
@@ -25,6 +26,7 @@ func ClientWorkflow() *cli.Command {
 		Usage:   "Client-side multi-step workflows",
 		Commands: []*cli.Command{
 			replaceAssetCommand(),
+			tagDeleteCommand(),
 		},
 	}
 }
@@ -58,6 +60,100 @@ func replaceAssetCommand() *cli.Command {
 		},
 		Action: clientWorkflowReplaceAsset,
 	}
+}
+
+func tagDeleteCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "tag-delete",
+		Usage: "Delete tags whose full path matches an include/exclude regex",
+		Description: "Fetches all tags, keeps those whose full path (Value) matches --include " +
+			"and not --exclude, shows every tag that would be deleted, then deletes them. " +
+			"Deletion is PERMANENT (the Tags API has no trash). Deleting a parent tag also " +
+			"deletes its child tags server-side.",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "include",
+				Usage: "only delete tags whose full path matches this `REGEX` (default: match all)",
+			},
+			&cli.StringFlag{
+				Name:  "exclude",
+				Usage: "never delete tags whose full path matches this `REGEX`",
+			},
+			&cli.BoolFlag{
+				Name:  "dry-run",
+				Usage: "print the tags that would be deleted without changing anything",
+			},
+			&cli.BoolFlag{
+				Name:  "yes",
+				Usage: "skip the confirmation prompt before deleting tags",
+			},
+		},
+		Action: clientWorkflowTagDelete,
+	}
+}
+
+func clientWorkflowTagDelete(ctx context.Context, cmd *cli.Command) error {
+	if cmd.Args().Len() > 0 {
+		return fmt.Errorf("tag-delete takes no positional arguments; pass filters as --include/--exclude REGEX flags (got %v)", cmd.Args().Slice())
+	}
+
+	include, err := compileOptionalRegex(cmd.String("include"))
+	if err != nil {
+		return fmt.Errorf("invalid --include: %w", err)
+	}
+	exclude, err := compileOptionalRegex(cmd.String("exclude"))
+	if err != nil {
+		return fmt.Errorf("invalid --exclude: %w", err)
+	}
+
+	dryRun := cmd.Bool("dry-run")
+	yes := cmd.Bool("yes")
+
+	c, err := newClient(cmd)
+	if err != nil {
+		return err
+	}
+
+	opts := workflows.TagDeleteOptions{
+		Include: include,
+		Exclude: exclude,
+		DryRun:  dryRun,
+	}
+
+	tags, err := workflows.SelectTagsForDeletion(ctx, c, opts)
+	if err != nil {
+		return err
+	}
+
+	if len(tags) == 0 {
+		fmt.Println("No tags matched; nothing to delete.")
+		return nil
+	}
+
+	fmt.Printf("%d tag(s) would be deleted:\n", len(tags))
+	for _, t := range tags {
+		fmt.Printf("  %s  %s\n", t.Id, t.Value)
+	}
+	fmt.Println("Warning: deletion is PERMANENT (tags have no trash) and deleting a parent tag also deletes its children.")
+
+	if !dryRun && !yes {
+		fmt.Printf("Permanently delete these %d tag(s)? [y/N]: ", len(tags))
+		if !confirm(os.Stdin) {
+			fmt.Println("Aborted.")
+			return nil
+		}
+	}
+
+	return workflows.DeleteTags(ctx, c, tags, opts)
+}
+
+// compileOptionalRegex compiles pattern, returning (nil, nil) for an empty
+// pattern (meaning "no filter"). A non-empty invalid pattern returns an error.
+func compileOptionalRegex(pattern string) (*regexp.Regexp, error) {
+	if pattern == "" {
+		return nil, nil
+	}
+	return regexp.Compile(pattern)
 }
 
 func clientWorkflowReplaceAsset(ctx context.Context, cmd *cli.Command) error {
