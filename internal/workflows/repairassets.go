@@ -26,9 +26,20 @@ const (
 	// any IFD entry whose count field is literally 0 to 1 in place). Safe and
 	// lossless: layout, pixel data and all other metadata are untouched.
 	RepairModeTIFFTags RepairMode = "tiff-tags"
+	// RepairModeTakeoutJSON is a DELETE mode, not a repair mode: it identifies
+	// assets whose stored bytes are actually a Google Photos Takeout metadata
+	// JSON sidecar imported in place of the real photo (a known Takeout
+	// export/import failure — the file has no image data and is unrecoverable)
+	// and removes them (to trash by default; --force to delete permanently).
+	// It is deliberately opt-in only and is NOT included in RepairModeAll,
+	// because unlike the repair strategies it deletes an asset outright rather
+	// than re-importing a fixed copy.
+	RepairModeTakeoutJSON RepairMode = "takeout-json"
 	// RepairModeAll runs every registered safe strategy, across all supported
 	// file types, in order until one applies. Adding a new strategy to the
 	// registries automatically extends "all" — no other code changes needed.
+	// It intentionally excludes RepairModeTakeoutJSON (a destructive delete
+	// mode), which must always be requested explicitly.
 	RepairModeAll RepairMode = "all"
 )
 
@@ -39,10 +50,12 @@ func ParseRepairMode(s string) (RepairMode, error) {
 		return RepairModeMarker, nil
 	case RepairModeTIFFTags:
 		return RepairModeTIFFTags, nil
+	case RepairModeTakeoutJSON:
+		return RepairModeTakeoutJSON, nil
 	case RepairModeAll:
 		return RepairModeAll, nil
 	default:
-		return "", fmt.Errorf("invalid --mode %q: valid modes are %q, %q, %q", s, RepairModeMarker, RepairModeTIFFTags, RepairModeAll)
+		return "", fmt.Errorf("invalid --mode %q: valid modes are %q, %q, %q, %q", s, RepairModeMarker, RepairModeTIFFTags, RepairModeTakeoutJSON, RepairModeAll)
 	}
 }
 
@@ -143,6 +156,10 @@ const (
 	// this mode can fix (e.g. missing SOI marker, or a TIFF whose IFD chain
 	// could not be walked / has no recognized zero-count defect).
 	OutcomeUnrepairable RepairOutcome = "unrepairable"
+	// OutcomeDeletedSidecar means the asset was confirmed (structurally) to be
+	// a Google Photos Takeout JSON sidecar imported in place of the real photo
+	// and was deleted (takeout-json mode).
+	OutcomeDeletedSidecar RepairOutcome = "deleted-sidecar"
 )
 
 // RepairAssetsOptions controls the repair-assets workflow.
@@ -199,10 +216,26 @@ func RepairAsset(ctx context.Context, c *client.Client, assetID openapi_types.UU
 	}
 	info := infoResp.JSON200
 
+	// takeout-json is a delete mode, not a repair mode: it applies to a file of
+	// any extension (the corrupt sidecar keeps the real photo's name) and does
+	// not go through the repair→replace path, so handle it before the
+	// JPEG/TIFF gate below.
+	if opts.Mode == RepairModeTakeoutJSON {
+		return repairTakeoutSidecar(ctx, c, assetID, info, opts)
+	}
+
 	ext := strings.ToLower(filepath.Ext(info.OriginalFileName))
 	isJPEG := info.Type == immichapi.IMAGE && jpegExtensions[ext]
 	isTIFF := info.Type == immichapi.IMAGE && tiffExtensions[ext]
 	if !isJPEG && !isTIFF {
+		// The repair strategies can't touch this file type, but it might still
+		// be a Google Takeout JSON sidecar (which can have any extension, e.g.
+		// a .dng). Probe just the head remotely — without downloading the whole
+		// file — so we can point the user at takeout-json mode when it applies.
+		if sc, _ := probeTakeoutSidecarHead(ctx, c, assetID); sc.IsSidecar {
+			fmt.Printf("%s: is a Google Takeout JSON sidecar (original title %q), not a repairable image — rerun with --mode %s to delete it\n", assetID, sc.Title, RepairModeTakeoutJSON)
+			return OutcomeUnrepairable, nil
+		}
 		fmt.Printf("%s: skipped (%s, no applicable repair strategy for this file type)\n", assetID, info.Type)
 		return OutcomeSkippedUnsupported, nil
 	}
@@ -214,6 +247,16 @@ func RepairAsset(ctx context.Context, c *client.Client, assetID openapi_types.UU
 		return "", fmt.Errorf("downloading original: %w", err)
 	}
 	defer os.Remove(srcPath)
+
+	// A file whose bytes are actually a Google Takeout JSON sidecar is not a
+	// repairable image (it has no image data at all). The repair modes can't
+	// fix it, but the dedicated takeout-json mode can remove it — surface that
+	// hint here rather than reporting an opaque "unrepairable". The probe reuses
+	// the already-downloaded bytes, so it costs nothing extra.
+	if sc, _ := analyzeTakeoutSidecar(srcPath); sc.IsSidecar {
+		fmt.Printf("%s: is a Google Takeout JSON sidecar (original title %q), not a repairable image — rerun with --mode %s to delete it\n", assetID, sc.Title, RepairModeTakeoutJSON)
+		return OutcomeUnrepairable, nil
+	}
 
 	repairedPath := filepath.Join(opts.TempDir, assetID.String()+"_repaired"+filepath.Ext(info.OriginalFileName))
 	var strategyName string
@@ -287,6 +330,46 @@ func RepairAsset(ctx context.Context, c *client.Client, assetID openapi_types.UU
 	return OutcomeRepaired, nil
 }
 
+// repairTakeoutSidecar implements the takeout-json mode. It downloads the
+// asset, structurally confirms the bytes are a Google Photos Takeout metadata
+// JSON sidecar that was imported in place of the real photo, and — because
+// such a file has no recoverable image data — deletes it (to trash by default;
+// opts.Force deletes permanently). Files that are not a confirmed sidecar are
+// left completely untouched and reported as skipped. In dry-run it reports what
+// it would delete without calling the delete API.
+func repairTakeoutSidecar(ctx context.Context, c *client.Client, assetID openapi_types.UUID, info *immichapi.AssetResponseDto, opts RepairAssetsOptions) (RepairOutcome, error) {
+	srcPath := filepath.Join(opts.TempDir, assetID.String()+"_probe"+filepath.Ext(info.OriginalFileName))
+	if err := downloadOriginalTo(ctx, c, assetID, srcPath); err != nil {
+		return "", fmt.Errorf("downloading original: %w", err)
+	}
+	defer os.Remove(srcPath)
+
+	analysis, err := analyzeTakeoutSidecar(srcPath)
+	if err != nil {
+		return "", fmt.Errorf("analysing takeout sidecar: %w", err)
+	}
+	if !analysis.IsSidecar {
+		fmt.Printf("%s: skipped (%s %q is not a Google Takeout JSON sidecar)\n", assetID, info.Type, info.OriginalFileName)
+		return OutcomeSkippedUnsupported, nil
+	}
+
+	disposition := "trash"
+	if opts.Force {
+		disposition = "permanent delete"
+	}
+	fmt.Printf("%s: confirmed Google Takeout JSON sidecar (original title %q, %d-byte JSON header); deleting (%s)\n", assetID, analysis.Title, analysis.JSONSize, disposition)
+
+	if opts.DryRun {
+		fmt.Printf("[dry-run] %s: would delete corrupt sidecar asset (%s)\n", assetID, disposition)
+		return OutcomeDeletedSidecar, nil
+	}
+
+	if err := removeOriginalAsset(ctx, c, assetID, opts.Force); err != nil {
+		return "", err
+	}
+	return OutcomeDeletedSidecar, nil
+}
+
 // isJPEGName reports whether name has a JPEG file extension.
 func isJPEGName(name string) bool {
 	return jpegExtensions[strings.ToLower(filepath.Ext(name))]
@@ -318,6 +401,31 @@ func analyzeJPEG(path string) (JPEGAnalysis, error) {
 		}
 	}
 	return a, nil
+}
+
+// probeTakeoutSidecarHead streams only the first maxSidecarProbeBytes of an
+// asset's original bytes and reports whether they are a Google Takeout JSON
+// sidecar. It exists so repair modes can flag an unsupported-extension file
+// (e.g. a .dng that is actually a sidecar) without downloading the whole file:
+// it reads the head and closes the connection. Any transport error is returned
+// so callers can treat "couldn't probe" as "not a sidecar" without masking it.
+func probeTakeoutSidecarHead(ctx context.Context, c *client.Client, id openapi_types.UUID) (TakeoutSidecarAnalysis, error) {
+	resp, err := c.API.DownloadAsset(ctx, id, nil)
+	if err != nil {
+		return TakeoutSidecarAnalysis{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return TakeoutSidecarAnalysis{}, fmt.Errorf("server returned %s (expected 200): %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+
+	head, err := io.ReadAll(io.LimitReader(resp.Body, maxSidecarProbeBytes))
+	if err != nil {
+		return TakeoutSidecarAnalysis{}, err
+	}
+	return analyzeTakeoutSidecarBytes(head), nil
 }
 
 // downloadOriginalTo streams GET /assets/{id}/original to destPath. It uses the
