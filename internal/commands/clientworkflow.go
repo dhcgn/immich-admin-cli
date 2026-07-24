@@ -25,6 +25,9 @@ func ClientWorkflow() *cli.Command {
 		Name:    "client-workflow",
 		Aliases: []string{"cw"},
 		Usage:   "Client-side multi-step workflows",
+		CommandNotFound: func(_ context.Context, cmd *cli.Command, name string) {
+			fmt.Fprintf(os.Stderr, "Unknown workflow %q. Run '%s --help' to see available workflows.\n", name, cmd.FullName())
+		},
 		Commands: []*cli.Command{
 			replaceAssetCommand(),
 			tagDeleteCommand(),
