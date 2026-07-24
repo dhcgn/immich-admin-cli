@@ -9,7 +9,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -413,7 +412,7 @@ func repairAssetsCommand() *cli.Command {
 		ArgsUsage: "[ASSET_ID ...]",
 		Description: "Repairs corrupt JPEG and TIFF assets in selectable modes and re-imports each fixed " +
 			"file via the replace-asset flow (upload → checksum verify → copy metadata → " +
-			"thumbhash verify → remove original).\n\n" +
+			"remove original).\n\n" +
 			"Modes:\n" +
 			"  marker     append the missing JPEG End-of-Image marker (FF D9). Lossless, EXIF preserved.\n" +
 			"  tiff-tags  patch TIFF IFD entries with an invalid zero count field (the exact defect " +
@@ -425,10 +424,14 @@ func repairAssetsCommand() *cli.Command {
 			"file's IFD chain parses cleanly AND at least one entry has the invalid zero count field — " +
 			"a TIFF without that specific defect is reported as already-ok, never modified.\n\n" +
 			"Because the repaired bytes differ, the fix is a re-import: the repaired file is " +
-			"uploaded as a new asset, the original's metadata is copied onto it, and the original " +
-			"is removed ONLY after Immich generates a thumbhash for the new asset — authoritative " +
-			"proof the server could actually decode the repaired file. If that never happens the " +
-			"original is left untouched and the failed upload is rolled back (trashed).\n\n" +
+			"uploaded as a new asset, its checksum is verified, the original's metadata is copied " +
+			"onto it, and only then is the original removed. Removal is NOT gated on Immich having " +
+			"generated a thumbhash for the new asset yet — thumbnail generation is asynchronous and " +
+			"its timing depends on too many server-side factors (queue depth, load, job scheduling) " +
+			"to reliably wait for. If an earlier step (upload or checksum verify or metadata copy) " +
+			"fails, the original is left untouched and the failed upload is rolled back (trashed). " +
+			"Use find-no-thumbhash afterwards to confirm a repair actually produced a thumbnail, or " +
+			"pass --keep-original to be able to re-check before the original is gone.\n\n" +
 			"Provide assets either as IDs (positional and/or --ids-file) OR via --check-all-assets " +
 			"(which scans every IMAGE asset with no thumbhash — the usual corruption signature). " +
 			"Assets with no applicable strategy for the chosen mode (e.g. non-JPEG/TIFF files, or " +
@@ -460,11 +463,6 @@ func repairAssetsCommand() *cli.Command {
 				Name:  "page-size",
 				Usage: "number of assets per API page when scanning with --check-all-assets (max 1000)",
 				Value: 250,
-			},
-			&cli.IntFlag{
-				Name:  "verify-timeout",
-				Usage: "seconds to wait for Immich to generate a thumbhash on the re-imported asset",
-				Value: 60,
 			},
 			&cli.BoolFlag{
 				Name:  "dry-run",
@@ -568,7 +566,7 @@ func clientWorkflowRepairAssets(ctx context.Context, cmd *cli.Command) error {
 		if force {
 			disposition = "permanently deleted"
 		}
-		fmt.Printf("This will attempt to repair %d asset(s); each original will be %s only after Immich verifies its repaired replacement.\n", len(ids), disposition)
+		fmt.Printf("This will attempt to repair %d asset(s); each original will be %s once its repaired replacement is uploaded and verified (checksum + metadata copy), regardless of whether Immich has generated a thumbnail for it yet.\n", len(ids), disposition)
 		fmt.Print("Proceed? [y/N]: ")
 		if !confirm(os.Stdin) {
 			fmt.Println("Aborted.")
@@ -583,12 +581,11 @@ func clientWorkflowRepairAssets(ctx context.Context, cmd *cli.Command) error {
 	defer os.RemoveAll(tempDir)
 
 	opts := workflows.RepairAssetsOptions{
-		Mode:          mode,
-		DryRun:        dryRun,
-		Force:         force,
-		KeepOriginal:  keepOriginal,
-		VerifyTimeout: time.Duration(cmd.Int("verify-timeout")) * time.Second,
-		TempDir:       tempDir,
+		Mode:         mode,
+		DryRun:       dryRun,
+		Force:        force,
+		KeepOriginal: keepOriginal,
+		TempDir:      tempDir,
 	}
 
 	counts := map[workflows.RepairOutcome]int{}
