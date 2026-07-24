@@ -23,9 +23,13 @@ const (
 	// RepairModeMarker runs only the JPEG End-of-Image marker strategy
 	// (append the missing FF D9). Safe and lossless.
 	RepairModeMarker RepairMode = "marker"
-	// RepairModeAll runs every registered safe strategy in order until one
-	// applies. Currently equivalent to "marker" but future-proof: adding a new
-	// strategy automatically extends "all".
+	// RepairModeTIFFTags runs only the TIFF zero-count IFD tag strategy (patch
+	// any IFD entry whose count field is literally 0 to 1 in place). Safe and
+	// lossless: layout, pixel data and all other metadata are untouched.
+	RepairModeTIFFTags RepairMode = "tiff-tags"
+	// RepairModeAll runs every registered safe strategy, across all supported
+	// file types, in order until one applies. Adding a new strategy to the
+	// registries automatically extends "all" — no other code changes needed.
 	RepairModeAll RepairMode = "all"
 )
 
@@ -34,10 +38,12 @@ func ParseRepairMode(s string) (RepairMode, error) {
 	switch RepairMode(s) {
 	case RepairModeMarker:
 		return RepairModeMarker, nil
+	case RepairModeTIFFTags:
+		return RepairModeTIFFTags, nil
 	case RepairModeAll:
 		return RepairModeAll, nil
 	default:
-		return "", fmt.Errorf("invalid --mode %q: valid modes are %q, %q", s, RepairModeMarker, RepairModeAll)
+		return "", fmt.Errorf("invalid --mode %q: valid modes are %q, %q, %q", s, RepairModeMarker, RepairModeTIFFTags, RepairModeAll)
 	}
 }
 
@@ -78,13 +84,47 @@ var repairStrategies = []RepairStrategy{
 	markerStrategy{},
 }
 
-// strategiesForMode returns the strategies to try for the given mode.
+// strategiesForMode returns the JPEG strategies to try for the given mode.
 func strategiesForMode(mode RepairMode) []RepairStrategy {
 	switch mode {
 	case RepairModeMarker:
 		return []RepairStrategy{markerStrategy{}}
+	case RepairModeTIFFTags:
+		return nil // TIFF-only mode: no JPEG strategy applies
 	default: // RepairModeAll
 		return repairStrategies
+	}
+}
+
+// TIFFRepairStrategy is one named TIFF repair technique, mirroring
+// RepairStrategy but keyed on TIFFAnalysis. Kept as a separate interface
+// (rather than a generic one) because JPEG and TIFF detection are
+// structurally unrelated — this keeps each Applicable() check precise and
+// avoids a shared "one size fits all" analysis type.
+type TIFFRepairStrategy interface {
+	// Name is the strategy's short identifier (e.g. "tiff-zero-count").
+	Name() string
+	// Applicable reports whether this strategy can repair a file with the
+	// given analysis.
+	Applicable(a TIFFAnalysis) bool
+	// Repair reads src and writes a repaired copy to dst. It must not modify
+	// src. It is only called when Applicable returned true.
+	Repair(src, dst string) error
+}
+
+// tiffRepairStrategies is the ordered registry of all safe TIFF repair
+// strategies.
+var tiffRepairStrategies = []TIFFRepairStrategy{
+	tiffZeroCountStrategy{},
+}
+
+// tiffStrategiesForMode returns the TIFF strategies to try for the given mode.
+func tiffStrategiesForMode(mode RepairMode) []TIFFRepairStrategy {
+	switch mode {
+	case RepairModeMarker:
+		return nil // JPEG-only mode: no TIFF strategy applies
+	default: // RepairModeTIFFTags or RepairModeAll
+		return tiffRepairStrategies
 	}
 }
 
@@ -97,10 +137,13 @@ const (
 	// OutcomeAlreadyOK means no strategy applied because the file is not
 	// missing anything this mode repairs (e.g. it already has an EOI marker).
 	OutcomeAlreadyOK RepairOutcome = "already-ok"
-	// OutcomeSkippedNonJPEG means the asset is not a JPEG image and was skipped.
-	OutcomeSkippedNonJPEG RepairOutcome = "skipped-non-jpeg"
+	// OutcomeSkippedUnsupported means the asset has no applicable repair
+	// strategy for its type/extension (e.g. not a JPEG or TIFF image) and was
+	// skipped without attempting anything.
+	OutcomeSkippedUnsupported RepairOutcome = "skipped-unsupported"
 	// OutcomeUnrepairable means the file is damaged beyond what any strategy in
-	// this mode can fix (e.g. missing SOI marker).
+	// this mode can fix (e.g. missing SOI marker, or a TIFF whose IFD chain
+	// could not be walked / has no recognized zero-count defect).
 	OutcomeUnrepairable RepairOutcome = "unrepairable"
 )
 
@@ -132,6 +175,13 @@ var jpegExtensions = map[string]bool{
 	".jfif": true,
 }
 
+// tiffExtensions are the file extensions treated as TIFF for the TIFF-only
+// repair strategies.
+var tiffExtensions = map[string]bool{
+	".tif":  true,
+	".tiff": true,
+}
+
 // RepairAsset attempts to repair one asset and, on success, re-imports it via
 // the replace-asset flow (upload → checksum verify → copy metadata → thumbhash
 // verify → remove original). It returns a RepairOutcome describing what
@@ -149,10 +199,12 @@ func RepairAsset(ctx context.Context, c *client.Client, assetID openapi_types.UU
 	}
 	info := infoResp.JSON200
 
-	// The marker strategies only apply to JPEG images.
-	if info.Type != immichapi.IMAGE || !isJPEGName(info.OriginalFileName) {
-		fmt.Printf("%s: skipped (%s, not a JPEG image)\n", assetID, info.Type)
-		return OutcomeSkippedNonJPEG, nil
+	ext := strings.ToLower(filepath.Ext(info.OriginalFileName))
+	isJPEG := info.Type == immichapi.IMAGE && jpegExtensions[ext]
+	isTIFF := info.Type == immichapi.IMAGE && tiffExtensions[ext]
+	if !isJPEG && !isTIFF {
+		fmt.Printf("%s: skipped (%s, no applicable repair strategy for this file type)\n", assetID, info.Type)
+		return OutcomeSkippedUnsupported, nil
 	}
 
 	// Download the original into the per-run temp dir so we can inspect and
@@ -163,34 +215,65 @@ func RepairAsset(ctx context.Context, c *client.Client, assetID openapi_types.UU
 	}
 	defer os.Remove(srcPath)
 
-	analysis, err := analyzeJPEG(srcPath)
-	if err != nil {
-		return "", fmt.Errorf("analysing JPEG: %w", err)
-	}
-
-	// Pick the first applicable strategy for the mode.
-	var chosen RepairStrategy
-	for _, s := range strategiesForMode(opts.Mode) {
-		if s.Applicable(analysis) {
-			chosen = s
-			break
-		}
-	}
-	if chosen == nil {
-		if analysis.HasEOI {
-			fmt.Printf("%s: already OK (has SOI and EOI markers); no %s repair applies\n", assetID, opts.Mode)
-			return OutcomeAlreadyOK, nil
-		}
-		return OutcomeUnrepairable, fmt.Errorf("no applicable repair strategy for mode %q (hasSOI=%t hasEOI=%t)", opts.Mode, analysis.HasSOI, analysis.HasEOI)
-	}
-
 	repairedPath := filepath.Join(opts.TempDir, assetID.String()+"_repaired"+filepath.Ext(info.OriginalFileName))
-	if err := chosen.Repair(srcPath, repairedPath); err != nil {
-		return "", fmt.Errorf("%s repair failed: %w", chosen.Name(), err)
+	var strategyName string
+
+	switch {
+	case isJPEG:
+		analysis, err := analyzeJPEG(srcPath)
+		if err != nil {
+			return "", fmt.Errorf("analysing JPEG: %w", err)
+		}
+
+		// Pick the first applicable strategy for the mode.
+		var chosen RepairStrategy
+		for _, s := range strategiesForMode(opts.Mode) {
+			if s.Applicable(analysis) {
+				chosen = s
+				break
+			}
+		}
+		if chosen == nil {
+			if analysis.HasEOI {
+				fmt.Printf("%s: already OK (has SOI and EOI markers); no %s repair applies\n", assetID, opts.Mode)
+				return OutcomeAlreadyOK, nil
+			}
+			return OutcomeUnrepairable, fmt.Errorf("no applicable repair strategy for mode %q (hasSOI=%t hasEOI=%t)", opts.Mode, analysis.HasSOI, analysis.HasEOI)
+		}
+		if err := chosen.Repair(srcPath, repairedPath); err != nil {
+			return "", fmt.Errorf("%s repair failed: %w", chosen.Name(), err)
+		}
+		strategyName = chosen.Name()
+
+	case isTIFF:
+		analysis, err := analyzeTIFF(srcPath)
+		if err != nil {
+			return "", fmt.Errorf("analysing TIFF: %w", err)
+		}
+
+		// Pick the first applicable strategy for the mode.
+		var chosen TIFFRepairStrategy
+		for _, s := range tiffStrategiesForMode(opts.Mode) {
+			if s.Applicable(analysis) {
+				chosen = s
+				break
+			}
+		}
+		if chosen == nil {
+			if analysis.Valid {
+				fmt.Printf("%s: already OK (no recognized malformed IFD tags); no %s repair applies\n", assetID, opts.Mode)
+				return OutcomeAlreadyOK, nil
+			}
+			return OutcomeUnrepairable, fmt.Errorf("no applicable repair strategy for mode %q (TIFF header/IFD chain could not be parsed)", opts.Mode)
+		}
+		if err := chosen.Repair(srcPath, repairedPath); err != nil {
+			return "", fmt.Errorf("%s repair failed: %w", chosen.Name(), err)
+		}
+		strategyName = chosen.Name()
 	}
 	defer os.Remove(repairedPath)
 
-	fmt.Printf("%s: applying %q repair, re-importing repaired file\n", assetID, chosen.Name())
+	fmt.Printf("%s: applying %q repair, re-importing repaired file\n", assetID, strategyName)
 
 	if err := ReplaceAsset(ctx, c, ReplacePair{AssetID: assetID, NewFilePath: repairedPath}, ReplaceAssetOptions{
 		DryRun:            opts.DryRun,

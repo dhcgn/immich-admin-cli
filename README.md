@@ -27,7 +27,7 @@ All workflows follow the same safety model: `--dry-run` shows what would happen 
 | ✅ done | `client-workflow replace-asset` | Replace an existing asset with a new file, keeping its metadata |
 | ✅ done | `client-workflow tag-delete` | Delete tags whose full path matches an include/exclude regex |
 | ✅ done | `client-workflow find-no-thumbhash` | Find assets without a thumbhash (likely corrupt or unprocessed) |
-| ✅ done | `client-workflow repair-assets` | Repair corrupt JPEG assets (missing EOI marker) and re-import them, keeping metadata |
+| ✅ done | `client-workflow repair-assets` | Repair corrupt JPEG (missing EOI marker) and TIFF (invalid zero-count IFD tag) assets and re-import them, keeping metadata |
 | ⏳ planned | `client-workflow reencode-jxl` | Re-encode assets to JPEG XL (`cjxl`), then replace the originals |
 | ⏳ planned | `client-workflow reencode-jpegli` | Re-encode assets with jpegli (`cjpegli`), then replace the originals |
 
@@ -115,25 +115,31 @@ cat corrupt-ids.txt | ForEach-Object { immich-admin assets info $_ }
 
 ### `client-workflow repair-assets` (alias `cw`)
 
-Repairs corrupt JPEG assets and re-imports each fixed file, keeping all metadata. The most common corruption for imported JPEGs is a **missing End-of-Image marker** (`FF D9`): the image data is fully intact, only the mandatory two trailing bytes are gone, so Immich can't generate a thumbnail (no thumbhash).
+Repairs corrupt JPEG and TIFF assets and re-imports each fixed file, keeping all metadata. Two independent, precisely-detected defects are covered:
+
+- **JPEG — missing End-of-Image marker** (`FF D9`): the image data is fully intact, only the mandatory two trailing bytes are gone, so Immich can't generate a thumbnail (no thumbhash).
+- **TIFF — invalid zero-count IFD tag**: some cameras/scanners write a private tag (e.g. `0x8657`/`0x8658`) with its 4-byte *count* field set to `0`, which the TIFF spec never allows. libtiff (which Immich's thumbnailer uses) fatally rejects this as `Input file has corrupt header: ... Null count for "Tag N"`, even though the actual image data is fine — ffmpeg-based tools ignore the defect, so it only surfaces as an Immich server-side thumbnail failure.
 
 Repair modes (extensible — new modes can be added without changing the command):
 
 | Mode | What it does | Loss |
 |------|--------------|------|
-| `marker` | Appends the missing `FF D9` End-of-Image marker (append-only) | None — EXIF preserved |
-| `all` | Runs every safe strategy in order (currently equivalent to `marker`) | None |
+| `marker` | Appends the missing `FF D9` End-of-Image marker to JPEGs (append-only) | None — EXIF preserved |
+| `tiff-tags` | Patches each IFD entry with an invalid zero count field to `1`, in place | None — pixel data, EXIF/XMP/dates all untouched |
+| `all` | Runs every safe strategy across both file types (currently `marker` + `tiff-tags`) | None |
+
+> 🎯 **Detection is structural, not a blind per-extension guess.** `tiff-tags` only ever applies when a raw IFD-chain walk (byte-level, no image decode — so it works regardless of compression/bit-depth) both (a) completes cleanly and (b) finds at least one entry whose count field is literally `0` — the exact, unambiguous condition libtiff rejects. A TIFF without that specific defect is reported as **already-ok** and left untouched; a TIFF whose IFD chain can't be parsed at all is reported **unrepairable**, never guessed at. The same principle applies to `marker`: it only fires when the byte-level SOI/EOI check finds the exact missing-EOI pattern. `--mode all` therefore never touches a file for a reason it can't concretely point to.
 
 Because the repaired bytes differ, the fix is a **re-import** built on the [`replace-asset`](#client-workflow-replace-asset-alias-cw) flow:
 
 1. **Download** the original asset's bytes
-2. **Detect** the problem (byte-level SOI/EOI marker check) and **repair** locally
+2. **Detect** the problem (JPEG: byte-level SOI/EOI marker check; TIFF: IFD-chain walk for zero-count entries) and **repair** locally
 3. **Upload** the repaired file as a new asset and **verify** its checksum
 4. **Copy metadata** from the original (albums, favorite, shared links, sidecar, stack)
 5. **Verify server-side** — wait until Immich generates a **thumbhash** for the new asset
 6. **Remove** the original (trash by default; `--force` to permanently delete)
 
-> 🔒 **How "is it really repaired?" is verified.** A local Go `image/jpeg` decode is *not* used as the check: Go's decoder is far stricter than Immich's (libjpeg/libvips) and rejects files Immich accepts — tested against 193 real corrupt files, Go decoded 0 of them even after a valid marker repair. The authoritative proof is server-side: Immich only produces a thumbhash if it could actually decode and thumbnail the file. So the original is removed **only after** the re-imported asset gains a thumbhash. If it never does within `--verify-timeout`, the repair is treated as failed: the original is left untouched and the failed upload is rolled back (trashed).
+> 🔒 **How "is it really repaired?" is verified.** A local decode is *not* used as the check: Go's `image/jpeg` is far stricter than Immich's (libjpeg/libvips) and rejects files Immich accepts — tested against 193 real corrupt files, Go decoded 0 of them even after a valid marker repair. The authoritative proof is server-side: Immich only produces a thumbhash if it could actually decode and thumbnail the file. So the original is removed **only after** the re-imported asset gains a thumbhash. If it never does within `--verify-timeout`, the repair is treated as failed: the original is left untouched and the failed upload is rolled back (trashed).
 
 ```sh
 # Repair specific assets by ID (dry-run first to preview the steps)
@@ -142,7 +148,10 @@ immich-admin client-workflow repair-assets --mode marker --dry-run <ASSET_ID> ..
 # Repair from a file of IDs (e.g. produced by find-no-thumbhash)
 immich-admin cw repair-assets --mode marker --ids-file corrupt-ids.txt
 
-# Scan and repair EVERY IMAGE asset with no thumbhash, in one pass
+# Repair the zero-count IFD tag defect in TIFFs only
+immich-admin cw repair-assets --mode tiff-tags --check-all-assets --yes
+
+# Scan and repair EVERY IMAGE asset with no thumbhash, in one pass (JPEGs and TIFFs)
 immich-admin cw repair-assets --mode all --check-all-assets --yes
 
 # Scan and repair only the corrupt images inside one album
@@ -151,7 +160,7 @@ immich-admin cw repair-assets --mode all --album-id <ALBUM_ID> --yes
 
 The asset source is exactly one of: explicit IDs (positional and/or `--ids-file`), `--check-all-assets` (whole library), or `--album-id` (one album). With `--album-id` the album is validated first (`getAlbumInfo`) and its name/asset count are printed, then only that album's IMAGE assets with no thumbhash are scanned and repaired.
 
-Flags: `--mode all|marker` (default `all`), `--ids-file FILE`, `--check-all-assets` (scan all no-thumbhash IMAGE assets), `--album-id UUID` (scan only that album — mutually exclusive with explicit IDs and `--check-all-assets`), `--keep-original` (repair + re-import but leave the original untouched), `--force` (permanently delete instead of trashing), `--page-size N` (for `--check-all-assets` / `--album-id`, default 250), `--verify-timeout SECONDS` (default 60), `--dry-run`, `--yes`. `marker` repair is JPEG-only; non-JPEG assets are skipped and reported. A per-asset outcome summary (repaired / already-ok / skipped-non-jpeg / unrepairable) is printed at the end.
+Flags: `--mode all|marker|tiff-tags` (default `all`), `--ids-file FILE`, `--check-all-assets` (scan all no-thumbhash IMAGE assets), `--album-id UUID` (scan only that album — mutually exclusive with explicit IDs and `--check-all-assets`), `--keep-original` (repair + re-import but leave the original untouched), `--force` (permanently delete instead of trashing), `--page-size N` (for `--check-all-assets` / `--album-id`, default 250), `--verify-timeout SECONDS` (default 60), `--dry-run`, `--yes`. Assets with no applicable strategy for the chosen mode (e.g. non-JPEG/TIFF files, or unsupported RAW/DNG variants such as JPEG-XL-compressed DNGs) are skipped and reported. A per-asset outcome summary (repaired / already-ok / skipped-unsupported / unrepairable) is printed at the end.
 
 ## Sample Use Cases
 
@@ -248,7 +257,7 @@ d2baa3b7-f61c-4434-bafd-a5a86856491e: applying "marker" repair, re-importing rep
 [dry-run]   4) Verify Immich generated a thumbhash for the new asset
 [dry-run]   5) Remove original asset
 ...
-Summary: repaired=0 already-ok=0 skipped-non-jpeg=0 unrepairable=0 (of 191)
+Summary: repaired=0 already-ok=0 skipped-unsupported=0 unrepairable=0 (of 191)
 ```
 
 Then run it for real. The original is trashed only **after** Immich confirms the repaired file by generating a thumbhash:
@@ -257,7 +266,22 @@ Then run it for real. The original is trashed only **after** Immich confirms the
 > immich-admin.exe cw repair-assets --mode all --check-all-assets --yes
 ```
 
-You can also repair a fixed list of IDs (e.g. the `corrupt-ids.txt` from above), keep the originals with `--keep-original`, or permanently delete them with `--force`. Non-JPEG assets in the set are skipped and reported. See [`client-workflow repair-assets`](#client-workflow-repair-assets-alias-cw) above for all flags and the full verification model.
+You can also repair a fixed list of IDs (e.g. the `corrupt-ids.txt` from above), keep the originals with `--keep-original`, or permanently delete them with `--force`. Assets with no applicable strategy for the mode are skipped and reported. See [`client-workflow repair-assets`](#client-workflow-repair-assets-alias-cw) above for all flags and the full verification model.
+
+### I have TIFFs that Immich can't thumbnail because of an invalid zero-count IFD tag
+
+Some cameras/scanners write a private TIFF tag with its count field set to `0`, which libtiff (Immich's thumbnailer) rejects fatally even though the pixel data is intact. `--mode tiff-tags` detects this exact defect (a structural IFD-chain walk, not a blind "it's a TIFF" guess) and patches only the offending 4-byte count fields — file size, layout, pixel data and metadata are all unchanged:
+
+```console
+> immich-admin.exe cw repair-assets --mode tiff-tags --check-all-assets --dry-run
+Found 21 asset(s) without thumbhash to attempt repair.
+08662bc6-d049-409b-b608-4c8f69076d02: applying "tiff-zero-count" repair, re-importing repaired file
+[dry-run] 08662bc6-…: would run 5 step(s):
+...
+Summary: repaired=0 already-ok=0 skipped-unsupported=0 unrepairable=0 (of 21)
+```
+
+`--mode all` runs both `marker` and `tiff-tags` in one pass, so mixed libraries with both corrupt JPEGs and corrupt TIFFs need only one command.
 
 ### I only want to repair the broken images inside one specific album
 
@@ -268,7 +292,7 @@ Pass the album's ID with `--album-id`. The album is validated and its name is sh
 Album "Wintertraum 2024" (312 asset(s)); scanning for IMAGE assets without thumbhash...
 Found 18 asset(s) without thumbhash to attempt repair.
 ...
-Summary: repaired=0 already-ok=0 skipped-non-jpeg=0 unrepairable=0 (of 18)
+Summary: repaired=0 already-ok=0 skipped-unsupported=0 unrepairable=0 (of 18)
 ```
 
 Drop `--dry-run` and add `--yes` to run it for real. The same `--album-id` filter also works on the read-only `find-no-thumbhash` if you just want to *list* an album's broken images first:
