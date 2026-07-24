@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 
+	openapi_types "github.com/oapi-codegen/runtime/types"
+
 	"github.com/dhcgn/immich-admin-cli/internal/client"
 	"github.com/dhcgn/immich-admin-cli/internal/immichapi"
 )
@@ -20,6 +22,9 @@ type FindNoThumbhashOptions struct {
 	OriginalFileName string
 	// Type, if non-empty, pre-filters by asset type (IMAGE, VIDEO, …).
 	Type string
+	// AlbumIDs, if non-empty, restricts the search to assets in these albums
+	// (MetadataSearchDto.albumIds).
+	AlbumIDs []openapi_types.UUID
 }
 
 // AssetNoThumbhash holds the minimal information about an asset that has no
@@ -54,6 +59,9 @@ func FindAssetsWithNoThumbhash(
 	if opts.Type != "" {
 		t := immichapi.AssetTypeEnum(opts.Type)
 		body.Type = &t
+	}
+	if len(opts.AlbumIDs) > 0 {
+		body.AlbumIds = &opts.AlbumIDs
 	}
 
 	var results []AssetNoThumbhash
@@ -106,4 +114,21 @@ func FindAssetsWithNoThumbhash(
 	fmt.Fprintln(os.Stderr)
 
 	return results, nil
+}
+
+// GetAlbumSummary fetches an album by ID (GET /albums/{id}, getAlbumInfo) and
+// returns its name and asset count, validating that the album exists. It is
+// used to confirm an --album-id and give friendly output before scanning the
+// album's assets. (This spec's AlbumResponseDto carries no asset list, so the
+// assets themselves are fetched via the metadata-search finder, filtered by
+// albumIds.)
+func GetAlbumSummary(ctx context.Context, c *client.Client, id openapi_types.UUID) (name string, count int, err error) {
+	resp, err := c.API.GetAlbumInfoWithResponse(ctx, id, &immichapi.GetAlbumInfoParams{})
+	if err == nil {
+		err = client.Check(resp, http.StatusOK)
+	}
+	if err != nil {
+		return "", 0, fmt.Errorf("fetching album %s: %w", id, err)
+	}
+	return resp.JSON200.AlbumName, resp.JSON200.AssetCount, nil
 }

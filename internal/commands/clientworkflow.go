@@ -9,10 +9,13 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/urfave/cli/v3"
 
+	"github.com/dhcgn/immich-admin-cli/internal/client"
 	"github.com/dhcgn/immich-admin-cli/internal/workflows"
 )
 
@@ -32,6 +35,7 @@ func ClientWorkflow() *cli.Command {
 			replaceAssetCommand(),
 			tagDeleteCommand(),
 			findNoThumbhashCommand(),
+			repairAssetsCommand(),
 		},
 	}
 }
@@ -326,6 +330,10 @@ func findNoThumbhashCommand() *cli.Command {
 				Name:  "type",
 				Usage: "pre-filter by asset type: IMAGE, VIDEO, AUDIO, OTHER",
 			},
+			&cli.StringFlag{
+				Name:  "album-id",
+				Usage: "restrict the scan to assets in this album `UUID`",
+			},
 			&cli.IntFlag{
 				Name:  "page-size",
 				Usage: "number of assets per API page (max 1000)",
@@ -355,6 +363,14 @@ func clientWorkflowFindNoThumbhash(ctx context.Context, cmd *cli.Command) error 
 		PageSize:         cmd.Int("page-size"),
 		OriginalFileName: cmd.String("original-file-name"),
 		Type:             cmd.String("type"),
+	}
+
+	if albumIDStr := cmd.String("album-id"); albumIDStr != "" {
+		albumID, perr := uuid.Parse(albumIDStr)
+		if perr != nil {
+			return fmt.Errorf("invalid --album-id %q: %w", albumIDStr, perr)
+		}
+		opts.AlbumIDs = []openapi_types.UUID{albumID}
 	}
 
 	results, err := workflows.FindAssetsWithNoThumbhash(ctx, c, opts)
@@ -388,4 +404,222 @@ func clientWorkflowFindNoThumbhash(ctx context.Context, cmd *cli.Command) error 
 	}
 
 	return nil
+}
+
+func repairAssetsCommand() *cli.Command {
+	return &cli.Command{
+		Name:      "repair-assets",
+		Usage:     "Repair corrupt image assets and re-import them, keeping metadata",
+		ArgsUsage: "[ASSET_ID ...]",
+		Description: "Repairs corrupt JPEG assets in selectable modes and re-imports each fixed " +
+			"file via the replace-asset flow (upload → checksum verify → copy metadata → " +
+			"thumbhash verify → remove original).\n\n" +
+			"Modes:\n" +
+			"  marker  append the missing JPEG End-of-Image marker (FF D9). Lossless, EXIF preserved.\n" +
+			"  all     run every safe strategy (currently equivalent to marker).\n\n" +
+			"Because the repaired bytes differ, the fix is a re-import: the repaired file is " +
+			"uploaded as a new asset, the original's metadata is copied onto it, and the original " +
+			"is removed ONLY after Immich generates a thumbhash for the new asset — authoritative " +
+			"proof the server could actually decode the repaired file. If that never happens the " +
+			"original is left untouched and the failed upload is rolled back (trashed).\n\n" +
+			"Provide assets either as IDs (positional and/or --ids-file) OR via --check-all-assets " +
+			"(which scans every IMAGE asset with no thumbhash — the usual corruption signature). " +
+			"marker repair is JPEG-only; non-JPEG assets are skipped.",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "mode",
+				Usage: "repair mode: all | marker",
+				Value: "all",
+			},
+			idsFileFlag(),
+			&cli.BoolFlag{
+				Name:  "check-all-assets",
+				Usage: "attempt repair on every IMAGE asset with no thumbhash (cannot be combined with explicit IDs)",
+			},
+			&cli.StringFlag{
+				Name:  "album-id",
+				Usage: "attempt repair on every IMAGE asset with no thumbhash in this album `UUID` (cannot be combined with explicit IDs or --check-all-assets)",
+			},
+			&cli.BoolFlag{
+				Name:  "keep-original",
+				Usage: "repair and re-import but keep the original asset instead of removing it",
+			},
+			&cli.BoolFlag{
+				Name:  "force",
+				Usage: "permanently delete the original asset instead of moving it to trash",
+			},
+			&cli.IntFlag{
+				Name:  "page-size",
+				Usage: "number of assets per API page when scanning with --check-all-assets (max 1000)",
+				Value: 250,
+			},
+			&cli.IntFlag{
+				Name:  "verify-timeout",
+				Usage: "seconds to wait for Immich to generate a thumbhash on the re-imported asset",
+				Value: 60,
+			},
+			&cli.BoolFlag{
+				Name:  "dry-run",
+				Usage: "print the planned steps for each asset without changing anything",
+			},
+			&cli.BoolFlag{
+				Name:  "yes",
+				Usage: "skip the confirmation prompt before removing original assets",
+			},
+		},
+		Action: clientWorkflowRepairAssets,
+	}
+}
+
+func clientWorkflowRepairAssets(ctx context.Context, cmd *cli.Command) error {
+	mode, err := workflows.ParseRepairMode(cmd.String("mode"))
+	if err != nil {
+		return err
+	}
+
+	checkAll := cmd.Bool("check-all-assets")
+	albumIDStr := cmd.String("album-id")
+	dryRun := cmd.Bool("dry-run")
+	keepOriginal := cmd.Bool("keep-original")
+	force := cmd.Bool("force")
+	yes := cmd.Bool("yes")
+
+	// Resolve the asset source: exactly one of explicit IDs (positional and/or
+	// --ids-file), --check-all-assets, or --album-id.
+	hasExplicit := cmd.Args().Len() > 0 || cmd.String("ids-file") != ""
+	hasAlbum := albumIDStr != ""
+	sources := 0
+	for _, on := range []bool{hasExplicit, checkAll, hasAlbum} {
+		if on {
+			sources++
+		}
+	}
+	if sources == 0 {
+		return fmt.Errorf("no assets given: pass asset IDs / --ids-file, --check-all-assets, or --album-id")
+	}
+	if sources > 1 {
+		return fmt.Errorf("choose exactly one asset source: asset IDs / --ids-file, --check-all-assets, or --album-id")
+	}
+
+	c, err := newClient(cmd)
+	if err != nil {
+		return err
+	}
+
+	var ids []openapi_types.UUID
+	switch {
+	case checkAll:
+		ids, err = repairScanNoThumbhash(ctx, c, workflows.FindNoThumbhashOptions{
+			PageSize: cmd.Int("page-size"),
+			Type:     "IMAGE",
+		})
+		if err != nil {
+			return err
+		}
+		if len(ids) == 0 {
+			fmt.Println("No IMAGE assets without thumbhash found; nothing to repair.")
+			return nil
+		}
+		fmt.Printf("Found %d asset(s) without thumbhash to attempt repair.\n", len(ids))
+
+	case hasAlbum:
+		albumID, perr := uuid.Parse(albumIDStr)
+		if perr != nil {
+			return fmt.Errorf("invalid --album-id %q: %w", albumIDStr, perr)
+		}
+		name, count, aerr := workflows.GetAlbumSummary(ctx, c, albumID)
+		if aerr != nil {
+			return aerr
+		}
+		fmt.Printf("Album %q (%d asset(s)); scanning for IMAGE assets without thumbhash...\n", name, count)
+		ids, err = repairScanNoThumbhash(ctx, c, workflows.FindNoThumbhashOptions{
+			PageSize: cmd.Int("page-size"),
+			Type:     "IMAGE",
+			AlbumIDs: []openapi_types.UUID{albumID},
+		})
+		if err != nil {
+			return err
+		}
+		if len(ids) == 0 {
+			fmt.Println("No IMAGE assets without thumbhash found in that album; nothing to repair.")
+			return nil
+		}
+		fmt.Printf("Found %d asset(s) without thumbhash to attempt repair.\n", len(ids))
+
+	default:
+		ids, err = collectIDs(cmd)
+		if err != nil {
+			return err
+		}
+	}
+
+	// The removal of originals is destructive, so require confirmation unless
+	// it won't run (--keep-original) or this is a dry run.
+	if !keepOriginal && !dryRun && !yes {
+		disposition := "moved to trash"
+		if force {
+			disposition = "permanently deleted"
+		}
+		fmt.Printf("This will attempt to repair %d asset(s); each original will be %s only after Immich verifies its repaired replacement.\n", len(ids), disposition)
+		fmt.Print("Proceed? [y/N]: ")
+		if !confirm(os.Stdin) {
+			fmt.Println("Aborted.")
+			return nil
+		}
+	}
+
+	tempDir, err := os.MkdirTemp("", "immich-repair-*")
+	if err != nil {
+		return fmt.Errorf("creating temp dir: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	opts := workflows.RepairAssetsOptions{
+		Mode:          mode,
+		DryRun:        dryRun,
+		Force:         force,
+		KeepOriginal:  keepOriginal,
+		VerifyTimeout: time.Duration(cmd.Int("verify-timeout")) * time.Second,
+		TempDir:       tempDir,
+	}
+
+	counts := map[workflows.RepairOutcome]int{}
+	runErr := workflows.RunBatch(ids,
+		func(id openapi_types.UUID) string { return id.String() },
+		func(id openapi_types.UUID) error {
+			outcome, err := workflows.RepairAsset(ctx, c, id, opts)
+			if outcome != "" {
+				counts[outcome]++
+			}
+			return err
+		},
+	)
+
+	fmt.Printf("\nSummary: repaired=%d already-ok=%d skipped-non-jpeg=%d unrepairable=%d (of %d)\n",
+		counts[workflows.OutcomeRepaired],
+		counts[workflows.OutcomeAlreadyOK],
+		counts[workflows.OutcomeSkippedNonJPEG],
+		counts[workflows.OutcomeUnrepairable],
+		len(ids),
+	)
+
+	return runErr
+}
+
+// repairScanNoThumbhash runs the no-thumbhash finder and parses the results
+// into asset UUIDs for repair.
+func repairScanNoThumbhash(ctx context.Context, c *client.Client, opts workflows.FindNoThumbhashOptions) ([]openapi_types.UUID, error) {
+	results, err := workflows.FindAssetsWithNoThumbhash(ctx, c, opts)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]openapi_types.UUID, 0, len(results))
+	for _, a := range results {
+		id, err := uuid.Parse(a.ID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid asset ID %q from search: %w", a.ID, err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }
