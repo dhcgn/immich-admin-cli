@@ -27,6 +27,7 @@ All workflows follow the same safety model: `--dry-run` shows what would happen 
 | ✅ done | `client-workflow replace-asset` | Replace an existing asset with a new file, keeping its metadata |
 | ✅ done | `client-workflow tag-delete` | Delete tags whose full path matches an include/exclude regex |
 | ✅ done | `client-workflow find-no-thumbhash` | Find assets without a thumbhash (likely corrupt or unprocessed) |
+| ✅ done | `client-workflow repair-assets` | Repair corrupt JPEG assets (missing EOI marker) and re-import them, keeping metadata |
 | ⏳ planned | `client-workflow reencode-jxl` | Re-encode assets to JPEG XL (`cjxl`), then replace the originals |
 | ⏳ planned | `client-workflow reencode-jpegli` | Re-encode assets with jpegli (`cjpegli`), then replace the originals |
 
@@ -112,6 +113,41 @@ immich-admin cw find-no-thumbhash --type IMAGE -q > corrupt-ids.txt
 cat corrupt-ids.txt | ForEach-Object { immich-admin assets info $_ }
 ```
 
+### `client-workflow repair-assets` (alias `cw`)
+
+Repairs corrupt JPEG assets and re-imports each fixed file, keeping all metadata. The most common corruption for imported JPEGs is a **missing End-of-Image marker** (`FF D9`): the image data is fully intact, only the mandatory two trailing bytes are gone, so Immich can't generate a thumbnail (no thumbhash).
+
+Repair modes (extensible — new modes can be added without changing the command):
+
+| Mode | What it does | Loss |
+|------|--------------|------|
+| `marker` | Appends the missing `FF D9` End-of-Image marker (append-only) | None — EXIF preserved |
+| `all` | Runs every safe strategy in order (currently equivalent to `marker`) | None |
+
+Because the repaired bytes differ, the fix is a **re-import** built on the [`replace-asset`](#client-workflow-replace-asset-alias-cw) flow:
+
+1. **Download** the original asset's bytes
+2. **Detect** the problem (byte-level SOI/EOI marker check) and **repair** locally
+3. **Upload** the repaired file as a new asset and **verify** its checksum
+4. **Copy metadata** from the original (albums, favorite, shared links, sidecar, stack)
+5. **Verify server-side** — wait until Immich generates a **thumbhash** for the new asset
+6. **Remove** the original (trash by default; `--force` to permanently delete)
+
+> 🔒 **How "is it really repaired?" is verified.** A local Go `image/jpeg` decode is *not* used as the check: Go's decoder is far stricter than Immich's (libjpeg/libvips) and rejects files Immich accepts — tested against 193 real corrupt files, Go decoded 0 of them even after a valid marker repair. The authoritative proof is server-side: Immich only produces a thumbhash if it could actually decode and thumbnail the file. So the original is removed **only after** the re-imported asset gains a thumbhash. If it never does within `--verify-timeout`, the repair is treated as failed: the original is left untouched and the failed upload is rolled back (trashed).
+
+```sh
+# Repair specific assets by ID (dry-run first to preview the steps)
+immich-admin client-workflow repair-assets --mode marker --dry-run <ASSET_ID> ...
+
+# Repair from a file of IDs (e.g. produced by find-no-thumbhash)
+immich-admin cw repair-assets --mode marker --ids-file corrupt-ids.txt
+
+# Scan and repair EVERY IMAGE asset with no thumbhash, in one pass
+immich-admin cw repair-assets --mode all --check-all-assets --yes
+```
+
+Flags: `--mode all|marker` (default `all`), `--ids-file FILE`, `--check-all-assets` (scan all no-thumbhash IMAGE assets; mutually exclusive with explicit IDs), `--keep-original` (repair + re-import but leave the original untouched), `--force` (permanently delete instead of trashing), `--page-size N` (for `--check-all-assets`, default 250), `--verify-timeout SECONDS` (default 60), `--dry-run`, `--yes`. `marker` repair is JPEG-only; non-JPEG assets are skipped and reported. A per-asset outcome summary (repaired / already-ok / skipped-non-jpeg / unrepairable) is printed at the end.
+
 ## Sample Use Cases
 
 ### I imported some corrupt images, now I want to replace them, but keep all metadata and albums
@@ -191,6 +227,32 @@ Pre-filter by file extension to narrow the scan:
 02348d7c-35a1-454e-bd5d-5650974b0d1e
 ...
 ```
+
+### I imported JPEGs that Immich shows as broken (no thumbnail) and want to repair them in place
+
+Many imported JPEGs are corrupt only in that they are missing the mandatory End-of-Image marker (`FF D9`) — the pixels are all there, so the fix is to append two bytes and re-import. `repair-assets` does this end to end and keeps every album/favorite/metadata. Always preview with `--dry-run` first:
+
+```console
+> immich-admin.exe cw repair-assets --mode marker --check-all-assets --dry-run
+Found 191 asset(s) without thumbhash to attempt repair.
+d2baa3b7-f61c-4434-bafd-a5a86856491e: applying "marker" repair, re-importing repaired file
+[dry-run] d2baa3b7-…: would run 5 step(s):
+[dry-run]   1) Upload new file …_repaired.jpg
+[dry-run]   2) Verify upload (checksum matches local file)
+[dry-run]   3) Copy metadata from original asset
+[dry-run]   4) Verify Immich generated a thumbhash for the new asset
+[dry-run]   5) Remove original asset
+...
+Summary: repaired=0 already-ok=0 skipped-non-jpeg=0 unrepairable=0 (of 191)
+```
+
+Then run it for real. The original is trashed only **after** Immich confirms the repaired file by generating a thumbhash:
+
+```console
+> immich-admin.exe cw repair-assets --mode all --check-all-assets --yes
+```
+
+You can also repair a fixed list of IDs (e.g. the `corrupt-ids.txt` from above), keep the originals with `--keep-original`, or permanently delete them with `--force`. Non-JPEG assets in the set are skipped and reported. See [`client-workflow repair-assets`](#client-workflow-repair-assets-alias-cw) above for all flags and the full verification model.
 
 ### I want to find all assets with a specific file extension, just like the Immich web search
 
