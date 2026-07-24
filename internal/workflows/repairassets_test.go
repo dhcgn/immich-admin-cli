@@ -115,9 +115,10 @@ func TestMarkerStrategyRepair(t *testing.T) {
 
 func TestParseRepairMode(t *testing.T) {
 	valid := map[string]RepairMode{
-		"marker":    RepairModeMarker,
-		"tiff-tags": RepairModeTIFFTags,
-		"all":       RepairModeAll,
+		"marker":       RepairModeMarker,
+		"tiff-tags":    RepairModeTIFFTags,
+		"takeout-json": RepairModeTakeoutJSON,
+		"all":          RepairModeAll,
 	}
 	for in, want := range valid {
 		got, err := ParseRepairMode(in)

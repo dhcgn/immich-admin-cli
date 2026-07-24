@@ -115,10 +115,11 @@ cat corrupt-ids.txt | ForEach-Object { immich-admin assets info $_ }
 
 ### `client-workflow repair-assets` (alias `cw`)
 
-Repairs corrupt JPEG and TIFF assets and re-imports each fixed file, keeping all metadata. Two independent, precisely-detected defects are covered:
+Repairs corrupt JPEG and TIFF assets and re-imports each fixed file, keeping all metadata. Two independent, precisely-detected defects are covered, plus a separate **delete** mode for an unrecoverable Google Takeout corruption:
 
 - **JPEG — missing End-of-Image marker** (`FF D9`): the image data is fully intact, only the mandatory two trailing bytes are gone, so Immich can't generate a thumbnail (no thumbhash).
 - **TIFF — invalid zero-count IFD tag**: some cameras/scanners write a private tag (e.g. `0x8657`/`0x8658`) with its 4-byte *count* field set to `0`, which the TIFF spec never allows. libtiff (which Immich's thumbnailer uses) fatally rejects this as `Input file has corrupt header: ... Null count for "Tag N"`, even though the actual image data is fine — ffmpeg-based tools ignore the defect, so it only surfaces as an Immich server-side thumbnail failure.
+- **Google Takeout JSON sidecar imported as the photo** (`takeout-json` mode — *delete*, not repair): a known Google Photos Takeout export/import failure where a photo's `*.json` metadata sidecar is stored under the real photo's name. The file contains **only JSON, no image data**, so the header/pixels needed to reconstruct the picture are physically gone — it is **not** recoverable by any tool. The only safe action is to remove the junk asset.
 
 Repair modes (extensible — new modes can be added without changing the command):
 
@@ -126,9 +127,14 @@ Repair modes (extensible — new modes can be added without changing the command
 |------|--------------|------|
 | `marker` | Appends the missing `FF D9` End-of-Image marker to JPEGs (append-only) | None — EXIF preserved |
 | `tiff-tags` | Patches each IFD entry with an invalid zero count field to `1`, in place | None — pixel data, EXIF/XMP/dates all untouched |
-| `all` | Runs every safe strategy across both file types (currently `marker` + `tiff-tags`) | None |
+| `takeout-json` | **Deletes** assets that are actually a Google Takeout JSON sidecar (no image data, unrecoverable). Trash by default; `--force` to delete permanently. Opt-in only — **not** part of `all` | Deletes the junk asset (nothing recoverable to lose) |
+| `all` | Runs every safe **repair** strategy across both file types (currently `marker` + `tiff-tags`). Excludes the destructive `takeout-json` mode | None |
 
 > 🎯 **Detection is structural, not a blind per-extension guess.** `tiff-tags` only ever applies when a raw IFD-chain walk (byte-level, no image decode — so it works regardless of compression/bit-depth) both (a) completes cleanly and (b) finds at least one entry whose count field is literally `0` — the exact, unambiguous condition libtiff rejects. A TIFF without that specific defect is reported as **already-ok** and left untouched; a TIFF whose IFD chain can't be parsed at all is reported **unrepairable**, never guessed at. The same principle applies to `marker`: it only fires when the byte-level SOI/EOI check finds the exact missing-EOI pattern. `--mode all` therefore never touches a file for a reason it can't concretely point to.
+
+> 🗑️ **`takeout-json` deletes, so its detection is deliberately the strictest.** A file is only ever deleted when its leading bytes parse as a complete JSON object **and** carry the full Google Takeout fingerprint — `title` **and** `photoTakenTime.timestamp` **and** `creationTime.timestamp` **and** `googlePhotosOrigin` must all be present. A real image never parses as a JSON object at all, and even an unrelated JSON file is extremely unlikely to carry that exact combination, so a real photo can never be mistaken for a sidecar. Anything that doesn't match is reported **skipped-not-sidecar** and left completely untouched. Use `--dry-run` to list what would be deleted first, and `--force` only if you want permanent deletion instead of trash. `--keep-original` is not applicable to this mode (there is nothing to keep).
+
+> 💡 **The repair modes point you at `takeout-json` automatically.** When `marker`, `tiff-tags` or `all` encounter an asset whose bytes are actually a Google Takeout sidecar (rather than a repairable image), they don't just report it as unrepairable — they print a per-asset hint like `… is a Google Takeout JSON sidecar (original title "IMG_1366.jpg"), not a repairable image — rerun with --mode takeout-json to delete it`. This works for supported types (already downloaded for repair) and for other extensions (e.g. a `.dng` that is really a sidecar), where only the file's head is fetched to recognize it — no full download.
 
 Because the repaired bytes differ, the fix is a **re-import** built on the [`replace-asset`](#client-workflow-replace-asset-alias-cw) flow:
 
@@ -136,10 +142,9 @@ Because the repaired bytes differ, the fix is a **re-import** built on the [`rep
 2. **Detect** the problem (JPEG: byte-level SOI/EOI marker check; TIFF: IFD-chain walk for zero-count entries) and **repair** locally
 3. **Upload** the repaired file as a new asset and **verify** its checksum
 4. **Copy metadata** from the original (albums, favorite, shared links, sidecar, stack)
-5. **Verify server-side** — wait until Immich generates a **thumbhash** for the new asset
-6. **Remove** the original (trash by default; `--force` to permanently delete)
+5. **Remove** the original (trash by default; `--force` to permanently delete)
 
-> 🔒 **How "is it really repaired?" is verified.** A local decode is *not* used as the check: Go's `image/jpeg` is far stricter than Immich's (libjpeg/libvips) and rejects files Immich accepts — tested against 193 real corrupt files, Go decoded 0 of them even after a valid marker repair. The authoritative proof is server-side: Immich only produces a thumbhash if it could actually decode and thumbnail the file. So the original is removed **only after** the re-imported asset gains a thumbhash. If it never does within `--verify-timeout`, the repair is treated as failed: the original is left untouched and the failed upload is rolled back (trashed).
+> ⚠️ **Removal is not gated on Immich generating a thumbnail.** A local decode is *not* used as the correctness check either: Go's `image/jpeg` is far stricter than Immich's (libjpeg/libvips) and rejects files Immich accepts — tested against 193 real corrupt files, Go decoded 0 of them even after a valid marker repair. An earlier version of this tool waited for Immich to generate a thumbhash for the new asset before removing the original, but server-side thumbnail generation is asynchronous and its timing depends on too many factors (job queue depth, server load, scheduling) to reliably bound with a fixed timeout — so that wait was removed. The original is now removed as soon as the upload is checksum-verified and metadata is copied. If an earlier step (upload or checksum verify or metadata copy) fails, the original is left untouched and the failed upload is rolled back (trashed). **Use [`find-no-thumbhash`](#client-workflow-find-no-thumbhash) afterwards** to confirm a repair actually produced a thumbnail, or pass `--keep-original` to be able to re-check before the original is gone.
 
 ```sh
 # Repair specific assets by ID (dry-run first to preview the steps)
@@ -156,11 +161,15 @@ immich-admin cw repair-assets --mode all --check-all-assets --yes
 
 # Scan and repair only the corrupt images inside one album
 immich-admin cw repair-assets --mode all --album-id <ALBUM_ID> --yes
+
+# Delete assets that are actually Google Takeout JSON sidecars (preview first, then run)
+immich-admin cw repair-assets --mode takeout-json --check-all-assets --dry-run
+immich-admin cw repair-assets --mode takeout-json --check-all-assets --yes
 ```
 
 The asset source is exactly one of: explicit IDs (positional and/or `--ids-file`), `--check-all-assets` (whole library), or `--album-id` (one album). With `--album-id` the album is validated first (`getAlbumInfo`) and its name/asset count are printed, then only that album's IMAGE assets with no thumbhash are scanned and repaired.
 
-Flags: `--mode all|marker|tiff-tags` (default `all`), `--ids-file FILE`, `--check-all-assets` (scan all no-thumbhash IMAGE assets), `--album-id UUID` (scan only that album — mutually exclusive with explicit IDs and `--check-all-assets`), `--keep-original` (repair + re-import but leave the original untouched), `--force` (permanently delete instead of trashing), `--page-size N` (for `--check-all-assets` / `--album-id`, default 250), `--verify-timeout SECONDS` (default 60), `--dry-run`, `--yes`. Assets with no applicable strategy for the chosen mode (e.g. non-JPEG/TIFF files, or unsupported RAW/DNG variants such as JPEG-XL-compressed DNGs) are skipped and reported. A per-asset outcome summary (repaired / already-ok / skipped-unsupported / unrepairable) is printed at the end.
+Flags: `--mode all|marker|tiff-tags|takeout-json` (default `all`), `--ids-file FILE`, `--check-all-assets` (scan all no-thumbhash IMAGE assets), `--album-id UUID` (scan only that album — mutually exclusive with explicit IDs and `--check-all-assets`), `--keep-original` (repair + re-import but leave the original untouched; not valid with `takeout-json`), `--force` (permanently delete instead of trashing), `--page-size N` (for `--check-all-assets` / `--album-id`, default 250), `--dry-run`, `--yes`. Assets with no applicable strategy for the chosen mode (e.g. non-JPEG/TIFF files, or unsupported RAW/DNG variants such as JPEG-XL-compressed DNGs) are skipped and reported. A per-asset outcome summary is printed at the end — `repaired / already-ok / skipped-unsupported / unrepairable` for the repair modes, or `deleted-sidecar / skipped-not-sidecar` for `takeout-json`.
 
 ## Sample Use Cases
 
@@ -250,17 +259,16 @@ Many imported JPEGs are corrupt only in that they are missing the mandatory End-
 > immich-admin.exe cw repair-assets --mode marker --check-all-assets --dry-run
 Found 191 asset(s) without thumbhash to attempt repair.
 d2baa3b7-f61c-4434-bafd-a5a86856491e: applying "marker" repair, re-importing repaired file
-[dry-run] d2baa3b7-…: would run 5 step(s):
+[dry-run] d2baa3b7-…: would run 4 step(s):
 [dry-run]   1) Upload new file …_repaired.jpg
 [dry-run]   2) Verify upload (checksum matches local file)
 [dry-run]   3) Copy metadata from original asset
-[dry-run]   4) Verify Immich generated a thumbhash for the new asset
-[dry-run]   5) Remove original asset
+[dry-run]   4) Remove original asset
 ...
 Summary: repaired=0 already-ok=0 skipped-unsupported=0 unrepairable=0 (of 191)
 ```
 
-Then run it for real. The original is trashed only **after** Immich confirms the repaired file by generating a thumbhash:
+Then run it for real. The original is trashed as soon as the repaired replacement is uploaded, checksum-verified, and has its metadata copied — this does **not** wait for Immich to generate a thumbnail (see the note above); re-check with `find-no-thumbhash` afterwards if you want to confirm:
 
 ```console
 > immich-admin.exe cw repair-assets --mode all --check-all-assets --yes
@@ -276,12 +284,32 @@ Some cameras/scanners write a private TIFF tag with its count field set to `0`, 
 > immich-admin.exe cw repair-assets --mode tiff-tags --check-all-assets --dry-run
 Found 21 asset(s) without thumbhash to attempt repair.
 08662bc6-d049-409b-b608-4c8f69076d02: applying "tiff-zero-count" repair, re-importing repaired file
-[dry-run] 08662bc6-…: would run 5 step(s):
+[dry-run] 08662bc6-…: would run 4 step(s):
 ...
 Summary: repaired=0 already-ok=0 skipped-unsupported=0 unrepairable=0 (of 21)
 ```
 
 `--mode all` runs both `marker` and `tiff-tags` in one pass, so mixed libraries with both corrupt JPEGs and corrupt TIFFs need only one command.
+
+### Some "photos" are actually Google Takeout JSON sidecars with no image — I want to remove them
+
+A known Google Photos Takeout failure imports a photo's `*.json` metadata sidecar *in place of* the real picture: the asset's bytes are pure JSON (`{ "title": "...", "photoTakenTime": {...}, ... }`) with no image data, so Immich can never thumbnail it and there is **nothing to repair** — the pixels are gone. `--mode takeout-json` finds these with a strict structural check (the leading JSON must carry the full Google fingerprint) and deletes them. Always preview with `--dry-run` first:
+
+```console
+> immich-admin.exe cw repair-assets --mode takeout-json --check-all-assets --dry-run
+Found 26 asset(s) without thumbhash to attempt repair.
+34be3430-…: confirmed Google Takeout JSON sidecar (original title "_MG_1366.jpg", 699-byte JSON header); deleting (trash)
+[dry-run] 34be3430-…: would delete corrupt sidecar asset (trash)
+961ff72e-…: skipped (VIDEO "PXL_20230807_145334662.MP.mp4" is not a Google Takeout JSON sidecar)
+...
+Summary: deleted-sidecar=25 skipped-not-sidecar=1 (of 26)
+```
+
+Note how a genuine video that merely happened to lack a thumbhash is reported **skipped-not-sidecar** and left untouched — only files that truly are sidecars are ever deleted. Drop `--dry-run` and add `--yes` to move them to trash (or add `--force` to delete permanently):
+
+```console
+> immich-admin.exe cw repair-assets --mode takeout-json --check-all-assets --yes
+```
 
 ### I only want to repair the broken images inside one specific album
 
