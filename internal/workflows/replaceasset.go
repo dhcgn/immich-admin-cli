@@ -37,31 +37,12 @@ type ReplaceAssetOptions struct {
 	// (it is not added to the step list at all), leaving the old asset
 	// completely untouched.
 	KeepOriginal bool
-	// VerifyProcessed, when true, adds a step (before removing the original)
-	// that waits until Immich has generated a thumbhash for the new asset —
-	// authoritative proof the server could actually decode/thumbnail the
-	// uploaded file. If the thumbhash never appears within VerifyTimeout the
-	// step fails, so the original is never removed. Used by repair-assets to
-	// guarantee a file was really fixed (a local image/jpeg decode is not a
-	// reliable check — Go's decoder is far stricter than Immich's libjpeg).
-	VerifyProcessed bool
-	// VerifyTimeout bounds the thumbhash wait (VerifyProcessed). Zero means a
-	// sensible default (defaultVerifyTimeout).
-	VerifyTimeout time.Duration
 	// RollbackOnFailure, when true, best-effort trashes the newly uploaded
 	// asset if any step after the upload fails, so a verified-bad duplicate is
 	// not left behind. The original is left untouched (removal is always last
 	// and only runs after every earlier step succeeded).
 	RollbackOnFailure bool
 }
-
-// defaultVerifyTimeout bounds how long ReplaceAsset waits for Immich to
-// generate a thumbhash for a freshly uploaded asset when VerifyProcessed is set.
-const defaultVerifyTimeout = 60 * time.Second
-
-// thumbhashPollInterval is how often the thumbhash-verification step re-checks
-// the new asset while waiting for the server to process it.
-const thumbhashPollInterval = 2 * time.Second
 
 // ReplaceAsset uploads pair.NewFilePath as a new asset, verifies the upload,
 // copies metadata from pair.AssetID onto the new asset, and — unless
@@ -107,19 +88,6 @@ func ReplaceAsset(ctx context.Context, c *client.Client, pair ReplacePair, opts 
 				return copyAssetMetadata(ctx, c, pair.AssetID, newAssetID)
 			},
 		},
-	}
-
-	if opts.VerifyProcessed {
-		timeout := opts.VerifyTimeout
-		if timeout <= 0 {
-			timeout = defaultVerifyTimeout
-		}
-		steps = append(steps, Step{
-			Name: "Verify Immich generated a thumbhash for the new asset",
-			Run: func(ctx context.Context) error {
-				return waitForThumbhash(ctx, c, newAssetID, timeout)
-			},
-		})
 	}
 
 	if !opts.KeepOriginal {
@@ -267,34 +235,6 @@ func removeOriginalAsset(ctx context.Context, c *client.Client, id openapi_types
 		return fmt.Errorf("removing original asset: %w", err)
 	}
 	return nil
-}
-
-// waitForThumbhash polls the new asset until Immich has generated a thumbhash
-// (proof the server successfully decoded/thumbnailed the uploaded file) or the
-// timeout elapses. Immich processes uploads asynchronously, so a freshly
-// uploaded asset may not have a thumbhash for a few seconds.
-func waitForThumbhash(ctx context.Context, c *client.Client, id openapi_types.UUID, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for {
-		resp, err := c.API.GetAssetInfoWithResponse(ctx, id, nil)
-		if err == nil {
-			err = client.Check(resp, http.StatusOK)
-		}
-		if err != nil {
-			return fmt.Errorf("fetching new asset info: %w", err)
-		}
-		if resp.JSON200.Thumbhash != nil && *resp.JSON200.Thumbhash != "" {
-			return nil
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("Immich did not generate a thumbhash for new asset %s within %s (the uploaded file could not be processed — repair likely did not fix it)", id, timeout)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(thumbhashPollInterval):
-		}
-	}
 }
 
 // fileSHA1Base64 returns the base64-standard-encoded SHA1 hash of the file

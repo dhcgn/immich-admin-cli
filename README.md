@@ -136,10 +136,9 @@ Because the repaired bytes differ, the fix is a **re-import** built on the [`rep
 2. **Detect** the problem (JPEG: byte-level SOI/EOI marker check; TIFF: IFD-chain walk for zero-count entries) and **repair** locally
 3. **Upload** the repaired file as a new asset and **verify** its checksum
 4. **Copy metadata** from the original (albums, favorite, shared links, sidecar, stack)
-5. **Verify server-side** — wait until Immich generates a **thumbhash** for the new asset
-6. **Remove** the original (trash by default; `--force` to permanently delete)
+5. **Remove** the original (trash by default; `--force` to permanently delete)
 
-> 🔒 **How "is it really repaired?" is verified.** A local decode is *not* used as the check: Go's `image/jpeg` is far stricter than Immich's (libjpeg/libvips) and rejects files Immich accepts — tested against 193 real corrupt files, Go decoded 0 of them even after a valid marker repair. The authoritative proof is server-side: Immich only produces a thumbhash if it could actually decode and thumbnail the file. So the original is removed **only after** the re-imported asset gains a thumbhash. If it never does within `--verify-timeout`, the repair is treated as failed: the original is left untouched and the failed upload is rolled back (trashed).
+> ⚠️ **Removal is not gated on Immich generating a thumbnail.** A local decode is *not* used as the correctness check either: Go's `image/jpeg` is far stricter than Immich's (libjpeg/libvips) and rejects files Immich accepts — tested against 193 real corrupt files, Go decoded 0 of them even after a valid marker repair. An earlier version of this tool waited for Immich to generate a thumbhash for the new asset before removing the original, but server-side thumbnail generation is asynchronous and its timing depends on too many factors (job queue depth, server load, scheduling) to reliably bound with a fixed timeout — so that wait was removed. The original is now removed as soon as the upload is checksum-verified and metadata is copied. If an earlier step (upload or checksum verify or metadata copy) fails, the original is left untouched and the failed upload is rolled back (trashed). **Use [`find-no-thumbhash`](#client-workflow-find-no-thumbhash) afterwards** to confirm a repair actually produced a thumbnail, or pass `--keep-original` to be able to re-check before the original is gone.
 
 ```sh
 # Repair specific assets by ID (dry-run first to preview the steps)
@@ -160,7 +159,7 @@ immich-admin cw repair-assets --mode all --album-id <ALBUM_ID> --yes
 
 The asset source is exactly one of: explicit IDs (positional and/or `--ids-file`), `--check-all-assets` (whole library), or `--album-id` (one album). With `--album-id` the album is validated first (`getAlbumInfo`) and its name/asset count are printed, then only that album's IMAGE assets with no thumbhash are scanned and repaired.
 
-Flags: `--mode all|marker|tiff-tags` (default `all`), `--ids-file FILE`, `--check-all-assets` (scan all no-thumbhash IMAGE assets), `--album-id UUID` (scan only that album — mutually exclusive with explicit IDs and `--check-all-assets`), `--keep-original` (repair + re-import but leave the original untouched), `--force` (permanently delete instead of trashing), `--page-size N` (for `--check-all-assets` / `--album-id`, default 250), `--verify-timeout SECONDS` (default 60), `--dry-run`, `--yes`. Assets with no applicable strategy for the chosen mode (e.g. non-JPEG/TIFF files, or unsupported RAW/DNG variants such as JPEG-XL-compressed DNGs) are skipped and reported. A per-asset outcome summary (repaired / already-ok / skipped-unsupported / unrepairable) is printed at the end.
+Flags: `--mode all|marker|tiff-tags` (default `all`), `--ids-file FILE`, `--check-all-assets` (scan all no-thumbhash IMAGE assets), `--album-id UUID` (scan only that album — mutually exclusive with explicit IDs and `--check-all-assets`), `--keep-original` (repair + re-import but leave the original untouched), `--force` (permanently delete instead of trashing), `--page-size N` (for `--check-all-assets` / `--album-id`, default 250), `--dry-run`, `--yes`. Assets with no applicable strategy for the chosen mode (e.g. non-JPEG/TIFF files, or unsupported RAW/DNG variants such as JPEG-XL-compressed DNGs) are skipped and reported. A per-asset outcome summary (repaired / already-ok / skipped-unsupported / unrepairable) is printed at the end.
 
 ## Sample Use Cases
 
@@ -250,17 +249,16 @@ Many imported JPEGs are corrupt only in that they are missing the mandatory End-
 > immich-admin.exe cw repair-assets --mode marker --check-all-assets --dry-run
 Found 191 asset(s) without thumbhash to attempt repair.
 d2baa3b7-f61c-4434-bafd-a5a86856491e: applying "marker" repair, re-importing repaired file
-[dry-run] d2baa3b7-…: would run 5 step(s):
+[dry-run] d2baa3b7-…: would run 4 step(s):
 [dry-run]   1) Upload new file …_repaired.jpg
 [dry-run]   2) Verify upload (checksum matches local file)
 [dry-run]   3) Copy metadata from original asset
-[dry-run]   4) Verify Immich generated a thumbhash for the new asset
-[dry-run]   5) Remove original asset
+[dry-run]   4) Remove original asset
 ...
 Summary: repaired=0 already-ok=0 skipped-unsupported=0 unrepairable=0 (of 191)
 ```
 
-Then run it for real. The original is trashed only **after** Immich confirms the repaired file by generating a thumbhash:
+Then run it for real. The original is trashed as soon as the repaired replacement is uploaded, checksum-verified, and has its metadata copied — this does **not** wait for Immich to generate a thumbnail (see the note above); re-check with `find-no-thumbhash` afterwards if you want to confirm:
 
 ```console
 > immich-admin.exe cw repair-assets --mode all --check-all-assets --yes
@@ -276,7 +274,7 @@ Some cameras/scanners write a private TIFF tag with its count field set to `0`, 
 > immich-admin.exe cw repair-assets --mode tiff-tags --check-all-assets --dry-run
 Found 21 asset(s) without thumbhash to attempt repair.
 08662bc6-d049-409b-b608-4c8f69076d02: applying "tiff-zero-count" repair, re-importing repaired file
-[dry-run] 08662bc6-…: would run 5 step(s):
+[dry-run] 08662bc6-…: would run 4 step(s):
 ...
 Summary: repaired=0 already-ok=0 skipped-unsupported=0 unrepairable=0 (of 21)
 ```

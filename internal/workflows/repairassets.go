@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
@@ -51,8 +50,7 @@ func ParseRepairMode(s string) (RepairMode, error) {
 // decide whether (and which) repair strategy applies. It deliberately does NOT
 // attempt a full image/jpeg decode: Go's decoder is far stricter than Immich's
 // libjpeg/libvips and rejects files Immich accepts, so a decode is neither a
-// reliable corruption detector nor a reliable repair verifier here. The
-// authoritative "is it repaired" check is server-side (see waitForThumbhash).
+// reliable corruption detector nor a reliable repair verifier here.
 type JPEGAnalysis struct {
 	// HasSOI reports whether the file starts with the Start-of-Image marker
 	// FF D8.
@@ -157,10 +155,6 @@ type RepairAssetsOptions struct {
 	Force bool
 	// KeepOriginal repairs and re-imports but leaves the original untouched.
 	KeepOriginal bool
-	// VerifyTimeout bounds how long to wait for Immich to generate a thumbhash
-	// on the re-imported asset before treating the repair as failed. Zero means
-	// the ReplaceAsset default.
-	VerifyTimeout time.Duration
 	// TempDir is the per-run scratch directory downloaded originals and
 	// repaired copies are written to. It must exist for the duration of the run.
 	TempDir string
@@ -183,11 +177,17 @@ var tiffExtensions = map[string]bool{
 }
 
 // RepairAsset attempts to repair one asset and, on success, re-imports it via
-// the replace-asset flow (upload → checksum verify → copy metadata → thumbhash
-// verify → remove original). It returns a RepairOutcome describing what
-// happened. A non-nil error means the asset failed (and, unless KeepOriginal,
-// the original was left untouched — removal only ever runs last, after Immich
-// has confirmed the repaired file by generating a thumbhash).
+// the replace-asset flow (upload → checksum verify → copy metadata → remove
+// original). It returns a RepairOutcome describing what happened. A non-nil
+// error means the asset failed (and, unless KeepOriginal, the original was
+// left untouched — removal only ever runs last, after the upload and metadata
+// copy succeeded). Note that removal is NOT gated on Immich having generated
+// a thumbhash for the new asset yet: server-side thumbnail generation is
+// asynchronous and its timing is affected by too many factors (queue depth,
+// job scheduling, server load) to reliably bound with a timeout, so
+// repair-assets no longer waits for it. Use `find-no-thumbhash` afterwards to
+// confirm a repair actually produced a thumbnail, or pass --keep-original to
+// be able to re-check before the original is gone.
 func RepairAsset(ctx context.Context, c *client.Client, assetID openapi_types.UUID, opts RepairAssetsOptions) (RepairOutcome, error) {
 	// Fetch asset info to learn the type and original file name.
 	infoResp, err := c.API.GetAssetInfoWithResponse(ctx, assetID, nil)
@@ -279,8 +279,6 @@ func RepairAsset(ctx context.Context, c *client.Client, assetID openapi_types.UU
 		DryRun:            opts.DryRun,
 		Force:             opts.Force,
 		KeepOriginal:      opts.KeepOriginal,
-		VerifyProcessed:   true,
-		VerifyTimeout:     opts.VerifyTimeout,
 		RollbackOnFailure: true,
 	}); err != nil {
 		return "", err
