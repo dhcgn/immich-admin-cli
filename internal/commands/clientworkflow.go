@@ -411,12 +411,19 @@ func repairAssetsCommand() *cli.Command {
 		Name:      "repair-assets",
 		Usage:     "Repair corrupt image assets and re-import them, keeping metadata",
 		ArgsUsage: "[ASSET_ID ...]",
-		Description: "Repairs corrupt JPEG assets in selectable modes and re-imports each fixed " +
+		Description: "Repairs corrupt JPEG and TIFF assets in selectable modes and re-imports each fixed " +
 			"file via the replace-asset flow (upload → checksum verify → copy metadata → " +
 			"thumbhash verify → remove original).\n\n" +
 			"Modes:\n" +
-			"  marker  append the missing JPEG End-of-Image marker (FF D9). Lossless, EXIF preserved.\n" +
-			"  all     run every safe strategy (currently equivalent to marker).\n\n" +
+			"  marker     append the missing JPEG End-of-Image marker (FF D9). Lossless, EXIF preserved.\n" +
+			"  tiff-tags  patch TIFF IFD entries with an invalid zero count field (the exact defect " +
+			"libtiff rejects as \"Null count for Tag N\", breaking Immich's thumbnailer). Lossless: " +
+			"only the 4-byte count field of each offending entry is changed, pixel data and all " +
+			"metadata (EXIF/XMP/dates) are untouched.\n" +
+			"  all        run every safe strategy across both file types (currently marker + tiff-tags).\n\n" +
+			"Detection is structural, not a blind per-file-type guess: tiff-tags only applies when the " +
+			"file's IFD chain parses cleanly AND at least one entry has the invalid zero count field — " +
+			"a TIFF without that specific defect is reported as already-ok, never modified.\n\n" +
 			"Because the repaired bytes differ, the fix is a re-import: the repaired file is " +
 			"uploaded as a new asset, the original's metadata is copied onto it, and the original " +
 			"is removed ONLY after Immich generates a thumbhash for the new asset — authoritative " +
@@ -424,11 +431,12 @@ func repairAssetsCommand() *cli.Command {
 			"original is left untouched and the failed upload is rolled back (trashed).\n\n" +
 			"Provide assets either as IDs (positional and/or --ids-file) OR via --check-all-assets " +
 			"(which scans every IMAGE asset with no thumbhash — the usual corruption signature). " +
-			"marker repair is JPEG-only; non-JPEG assets are skipped.",
+			"Assets with no applicable strategy for the chosen mode (e.g. non-JPEG/TIFF files, or " +
+			"RAW/DNG variants such as JPEG-XL-compressed DNGs) are skipped, not modified.",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:  "mode",
-				Usage: "repair mode: all | marker",
+				Usage: "repair mode: all | marker | tiff-tags",
 				Value: "all",
 			},
 			idsFileFlag(),
@@ -595,10 +603,10 @@ func clientWorkflowRepairAssets(ctx context.Context, cmd *cli.Command) error {
 		},
 	)
 
-	fmt.Printf("\nSummary: repaired=%d already-ok=%d skipped-non-jpeg=%d unrepairable=%d (of %d)\n",
+	fmt.Printf("\nSummary: repaired=%d already-ok=%d skipped-unsupported=%d unrepairable=%d (of %d)\n",
 		counts[workflows.OutcomeRepaired],
 		counts[workflows.OutcomeAlreadyOK],
-		counts[workflows.OutcomeSkippedNonJPEG],
+		counts[workflows.OutcomeSkippedUnsupported],
 		counts[workflows.OutcomeUnrepairable],
 		len(ids),
 	)
