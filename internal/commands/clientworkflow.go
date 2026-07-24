@@ -3,6 +3,7 @@ package commands
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -27,6 +28,7 @@ func ClientWorkflow() *cli.Command {
 		Commands: []*cli.Command{
 			replaceAssetCommand(),
 			tagDeleteCommand(),
+			findNoThumbhashCommand(),
 		},
 	}
 }
@@ -301,4 +303,86 @@ func readReplacePairLines(path string) ([]string, error) {
 		return nil, fmt.Errorf("reading replace-file %q: %w", path, err)
 	}
 	return lines, nil
+}
+
+func findNoThumbhashCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "find-no-thumbhash",
+		Usage: "Find assets that have no thumbhash (likely corrupt or unprocessed)",
+		Description: "Scans all assets matching optional pre-filters and reports those whose " +
+			"thumbhash is null or empty. Assets without a thumbhash often have corrupt files " +
+			"that Immich could not generate a thumbnail for.\n\n" +
+			"This is a non-destructive, read-only workflow — it only reports IDs.",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "original-file-name",
+				Aliases: []string{"n"},
+				Usage:   "pre-filter by original file name (substring match)",
+			},
+			&cli.StringFlag{
+				Name:  "type",
+				Usage: "pre-filter by asset type: IMAGE, VIDEO, AUDIO, OTHER",
+			},
+			&cli.IntFlag{
+				Name:  "page-size",
+				Usage: "number of assets per API page (max 1000)",
+				Value: 250,
+			},
+			&cli.BoolFlag{
+				Name:  "json",
+				Usage: "print results as JSON array",
+			},
+			&cli.BoolFlag{
+				Name:    "ids-only",
+				Aliases: []string{"q"},
+				Usage:   "print only asset IDs, one per line",
+			},
+		},
+		Action: clientWorkflowFindNoThumbhash,
+	}
+}
+
+func clientWorkflowFindNoThumbhash(ctx context.Context, cmd *cli.Command) error {
+	c, err := newClient(cmd)
+	if err != nil {
+		return err
+	}
+
+	opts := workflows.FindNoThumbhashOptions{
+		PageSize:         cmd.Int("page-size"),
+		OriginalFileName: cmd.String("original-file-name"),
+		Type:             cmd.String("type"),
+	}
+
+	results, err := workflows.FindAssetsWithNoThumbhash(ctx, c, opts)
+	if err != nil {
+		return err
+	}
+
+	if len(results) == 0 {
+		fmt.Println("No assets without thumbhash found.")
+		return nil
+	}
+
+	switch {
+	case cmd.Bool("json"):
+		raw, jsonErr := json.MarshalIndent(results, "", "  ")
+		if jsonErr != nil {
+			return fmt.Errorf("marshalling results: %w", jsonErr)
+		}
+		fmt.Println(string(raw))
+
+	case cmd.Bool("ids-only"):
+		for _, a := range results {
+			fmt.Println(a.ID)
+		}
+
+	default:
+		fmt.Printf("Found %d asset(s) without thumbhash:\n", len(results))
+		for _, a := range results {
+			fmt.Printf("%s\t%s\t%s\n", a.ID, a.OriginalFileName, a.Type)
+		}
+	}
+
+	return nil
 }

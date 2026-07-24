@@ -26,6 +26,7 @@ All workflows follow the same safety model: `--dry-run` shows what would happen 
 |:------:|---------|-------------|
 | ✅ done | `client-workflow replace-asset` | Replace an existing asset with a new file, keeping its metadata |
 | ✅ done | `client-workflow tag-delete` | Delete tags whose full path matches an include/exclude regex |
+| ✅ done | `client-workflow find-no-thumbhash` | Find assets without a thumbhash (likely corrupt or unprocessed) |
 | ⏳ planned | `client-workflow reencode-jxl` | Re-encode assets to JPEG XL (`cjxl`), then replace the originals |
 | ⏳ planned | `client-workflow reencode-jpegli` | Re-encode assets with jpegli (`cjpegli`), then replace the originals |
 
@@ -82,6 +83,35 @@ Flags: `--include REGEX` (default: match all), `--exclude REGEX`, `--dry-run`, `
 
 > ⚠️ Unlike the asset workflows, tag deletion is **permanent** — the Tags API has no trash. Deleting a parent tag also deletes its child tags server-side. Always run with `--dry-run` first.
 
+### `client-workflow find-no-thumbhash`
+
+Finds assets whose `thumbhash` field is null or empty — a reliable indicator that Immich could not generate a thumbnail, which usually means the file is **corrupt or unprocessable**.
+
+This is a non-destructive, **read-only** workflow that scans all assets via `POST /search/metadata` with automatic pagination, checking each asset's thumbhash in the response. No per-asset API call is needed.
+
+```sh
+# Find all assets without thumbhash
+immich-admin client-workflow find-no-thumbhash
+
+# Only images, output as one ID per line (for piping)
+immich-admin cw find-no-thumbhash --type IMAGE --ids-only
+
+# Pre-filter by file name, JSON output
+immich-admin cw find-no-thumbhash --original-file-name JPG --json
+```
+
+Flags: `--type TYPE` (pre-filter: IMAGE, VIDEO, …), `--original-file-name NAME` (substring match), `--page-size N` (default 250, max 1000), `--json`, `--ids-only` / `-q`.
+
+Typical follow-up — save corrupt IDs, then use them later with a repair workflow:
+
+```sh
+# Save corrupt asset IDs to a file
+immich-admin cw find-no-thumbhash --type IMAGE -q > corrupt-ids.txt
+
+# Inspect each one
+cat corrupt-ids.txt | ForEach-Object { immich-admin assets info $_ }
+```
+
 ## Sample Use Cases
 
 ### I imported some corrupt images, now I want to replace them, but keep all metadata and albums
@@ -130,6 +160,37 @@ Warning: deletion is PERMANENT (tags have no trash) and deleting a parent tag al
 `--dry-run` only previews the selection. The `{immich-go}` tags are kept because their full path contains `immich-go`; everything else is listed for deletion. Remove `--dry-run` (and add `--yes` to skip the prompt) to actually delete them. See [`client-workflow tag-delete`](#client-workflow-tag-delete-alias-cw) above for all flags.
 
 > Note: `--exclude "immich-go"` is a **regex**, matched as a substring of the full tag path. To match "contains", write the literal text (`immich-go`), not a glob like `*immich-go*`.
+
+### I want to find corrupt images that have no thumbnail (thumbhash)
+
+Assets without a thumbhash are a strong indicator of corruption — Immich could not generate a preview. Use `find-no-thumbhash` to identify them:
+
+```console
+> immich-admin.exe cw find-no-thumbhash --type IMAGE
+Scanned 86911 assets, found 191 without thumbhash...
+Found 191 asset(s) without thumbhash:
+43da46e2-d414-4703-8efb-dfc40f8acc7b    20241026_143206(1).dng  IMAGE
+467e8ce5-1aef-47f0-813f-6cd39607fc85    original_…_IMG_20210728_075509.jpg    IMAGE
+d2baa3b7-f61c-4434-bafd-a5a86856491e    Wintertraum_ST_321.jpg  IMAGE
+...
+```
+
+Save the IDs to a file for use with a future repair workflow:
+
+```console
+> immich-admin.exe cw find-no-thumbhash --type IMAGE -q > corrupt-ids.txt
+> wc -l corrupt-ids.txt
+191 corrupt-ids.txt
+```
+
+Pre-filter by file extension to narrow the scan:
+
+```console
+> immich-admin.exe cw find-no-thumbhash --original-file-name JPG -q
+467e8ce5-1aef-47f0-813f-6cd39607fc85
+02348d7c-35a1-454e-bd5d-5650974b0d1e
+...
+```
 
 ### I want to find all assets with a specific file extension, just like the Immich web search
 
