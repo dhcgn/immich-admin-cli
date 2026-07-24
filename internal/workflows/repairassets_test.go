@@ -282,8 +282,8 @@ func TestTIFFZeroCountStrategyApplicable(t *testing.T) {
 		want bool
 	}{
 		{TIFFAnalysis{Valid: true, ZeroCountTags: []TIFFZeroCountTag{{Tag: 0x8657}}}, true},
-		{TIFFAnalysis{Valid: true, ZeroCountTags: nil}, false},          // clean TIFF: not applicable
-		{TIFFAnalysis{Valid: false, ZeroCountTags: nil}, false},         // unparseable: not applicable
+		{TIFFAnalysis{Valid: true, ZeroCountTags: nil}, false},                           // clean TIFF: not applicable
+		{TIFFAnalysis{Valid: false, ZeroCountTags: nil}, false},                          // unparseable: not applicable
 		{TIFFAnalysis{Valid: false, ZeroCountTags: []TIFFZeroCountTag{{Tag: 1}}}, false}, // defensive: never trust tags when !Valid
 	}
 	for _, tc := range cases {
