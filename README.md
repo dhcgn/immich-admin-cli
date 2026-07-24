@@ -26,6 +26,7 @@ All workflows follow the same safety model: `--dry-run` shows what would happen 
 |:------:|---------|-------------|
 | ✅ done | `client-workflow replace-asset` | Replace an existing asset with a new file, keeping its metadata |
 | ✅ done | `client-workflow tag-delete` | Delete tags whose full path matches an include/exclude regex |
+| ✅ done | `client-workflow find-no-thumbhash` | Find assets without a thumbhash (likely corrupt or unprocessed) |
 | ⏳ planned | `client-workflow reencode-jxl` | Re-encode assets to JPEG XL (`cjxl`), then replace the originals |
 | ⏳ planned | `client-workflow reencode-jpegli` | Re-encode assets with jpegli (`cjpegli`), then replace the originals |
 
@@ -82,6 +83,35 @@ Flags: `--include REGEX` (default: match all), `--exclude REGEX`, `--dry-run`, `
 
 > ⚠️ Unlike the asset workflows, tag deletion is **permanent** — the Tags API has no trash. Deleting a parent tag also deletes its child tags server-side. Always run with `--dry-run` first.
 
+### `client-workflow find-no-thumbhash`
+
+Finds assets whose `thumbhash` field is null or empty — a reliable indicator that Immich could not generate a thumbnail, which usually means the file is **corrupt or unprocessable**.
+
+This is a non-destructive, **read-only** workflow that scans all assets via `POST /search/metadata` with automatic pagination, checking each asset's thumbhash in the response. No per-asset API call is needed.
+
+```sh
+# Find all assets without thumbhash
+immich-admin client-workflow find-no-thumbhash
+
+# Only images, output as one ID per line (for piping)
+immich-admin cw find-no-thumbhash --type IMAGE --ids-only
+
+# Pre-filter by file name, JSON output
+immich-admin cw find-no-thumbhash --original-file-name JPG --json
+```
+
+Flags: `--type TYPE` (pre-filter: IMAGE, VIDEO, …), `--original-file-name NAME` (substring match), `--page-size N` (default 250, max 1000), `--json`, `--ids-only` / `-q`.
+
+Typical follow-up — save corrupt IDs, then use them later with a repair workflow:
+
+```sh
+# Save corrupt asset IDs to a file
+immich-admin cw find-no-thumbhash --type IMAGE -q > corrupt-ids.txt
+
+# Inspect each one
+cat corrupt-ids.txt | ForEach-Object { immich-admin assets info $_ }
+```
+
 ## Sample Use Cases
 
 ### I imported some corrupt images, now I want to replace them, but keep all metadata and albums
@@ -131,11 +161,112 @@ Warning: deletion is PERMANENT (tags have no trash) and deleting a parent tag al
 
 > Note: `--exclude "immich-go"` is a **regex**, matched as a substring of the full tag path. To match "contains", write the literal text (`immich-go`), not a glob like `*immich-go*`.
 
+### I want to find corrupt images that have no thumbnail (thumbhash)
+
+Assets without a thumbhash are a strong indicator of corruption — Immich could not generate a preview. Use `find-no-thumbhash` to identify them:
+
+```console
+> immich-admin.exe cw find-no-thumbhash --type IMAGE
+Scanned 86911 assets, found 191 without thumbhash...
+Found 191 asset(s) without thumbhash:
+43da46e2-d414-4703-8efb-dfc40f8acc7b    20241026_143206(1).dng  IMAGE
+467e8ce5-1aef-47f0-813f-6cd39607fc85    original_…_IMG_20210728_075509.jpg    IMAGE
+d2baa3b7-f61c-4434-bafd-a5a86856491e    Wintertraum_ST_321.jpg  IMAGE
+...
+```
+
+Save the IDs to a file for use with a future repair workflow:
+
+```console
+> immich-admin.exe cw find-no-thumbhash --type IMAGE -q > corrupt-ids.txt
+> wc -l corrupt-ids.txt
+191 corrupt-ids.txt
+```
+
+Pre-filter by file extension to narrow the scan:
+
+```console
+> immich-admin.exe cw find-no-thumbhash --original-file-name JPG -q
+467e8ce5-1aef-47f0-813f-6cd39607fc85
+02348d7c-35a1-454e-bd5d-5650974b0d1e
+...
+```
+
+### I want to find all assets with a specific file extension, just like the Immich web search
+
+The Immich web UI lets you search by file name via the search bar (e.g. `https://immich.example.com/search?query={"originalFileName":"JPG"}`). The same query works on the command line:
+
+```console
+> immich-admin.exe search metadata --original-file-name JPG --page-size 10
+b847ca61-2542-4ec3-9d86-136b2ad64104    20260722_195350.jpg     IMAGE
+d47c1709-3540-42e5-a735-b6e9279b6190    20260722_190947.jpg     IMAGE
+a464ee03-ca9b-4567-a873-e269ea26f6f9    20260722_073838(0).jpg  IMAGE
+...
+--- 10 asset(s) found (page 1) ---
+```
+
+Use `--all` to page through the entire library automatically:
+
+```console
+> immich-admin.exe search metadata --original-file-name JPG --all
+... (all matching assets across all pages)
+--- 3842 asset(s) found (page 39) ---
+```
+
+### I want a list of IDs for a filtered set of assets, to pipe into another command
+
+`--ids-only` (short: `-q`) prints one UUID per line — ready to be piped into `assets info`, `cw replace-asset`, or saved to a file for later use:
+
+```console
+> immich-admin.exe search metadata --original-file-name JPG -q | Select-Object -First 2
+b847ca61-2542-4ec3-9d86-136b2ad64104
+d47c1709-3540-42e5-a735-b6e9279b6190
+```
+
+Pipe directly into `assets info` to inspect each result:
+
+```console
+> immich-admin.exe search metadata --original-file-name JPG -q | ForEach-Object {
+    immich-admin.exe assets info $_
+}
+```
+
+Or save the IDs to a file for use with bulk commands (`--ids-file`):
+
+```console
+> immich-admin.exe search metadata --original-file-name JPG --all -q > corrupt-jpgs.txt
+> immich-admin.exe cw replace-asset --replace-file pairs.txt   # pairs: "oldId;newFile"
+```
+
+### I want to find all images that are not in any album
+
+```console
+> immich-admin.exe search metadata --is-not-in-album true --type IMAGE --all -q > orphans.txt
+```
+
+### I want to find all offline assets (files that Immich can no longer access)
+
+```console
+> immich-admin.exe search metadata --is-offline true --all
+```
+
+### I want to filter by camera make and model
+
+```console
+> immich-admin.exe search metadata --make Canon --model "EOS R5" --all -q > canon-r5.txt
+```
+
+### I want to filter by location and date range
+
+```console
+> immich-admin.exe search metadata --city Berlin --taken-after 2024-01-01T00:00:00Z --taken-before 2024-12-31T23:59:59Z
+```
+
 ## API Coverage
 
 <!-- Generated by tools/apitable — do not edit between the markers. Refresh with `go generate ./...` -->
 <!-- API-TABLE:BEGIN -->
-**9 of 235 endpoints implemented** (17 deprecated and 2 internal endpoints omitted per project policy).
+**10 of 235 endpoints implemented** (17 deprecated and 2 internal endpoints omitted per project policy).
 
 <details>
 <summary><b>API keys</b> (0/5)</summary>
@@ -443,14 +574,14 @@ Warning: deletion is PERMANENT (tags have no trash) and deleting a parent tag al
 </details>
 
 <details>
-<summary><b>Search</b> (0/10)</summary>
+<summary><b>Search</b> (1/10)</summary>
 
 | Impl | Method | Path | Operation | State |
 |:----:|--------|------|-----------|-------|
 |  | GET | `/search/cities` | `getAssetsByCity` | Stable |
 |  | GET | `/search/explore` | `getExploreData` | Stable |
 |  | POST | `/search/large-assets` | `searchLargeAssets` | Stable |
-|  | POST | `/search/metadata` | `searchAssets` | Stable |
+| ✅ | POST | `/search/metadata` | `searchAssets` | Stable |
 |  | GET | `/search/person` | `searchPerson` | Stable |
 |  | GET | `/search/places` | `searchPlaces` | Stable |
 |  | POST | `/search/random` | `searchRandom` | Stable |
