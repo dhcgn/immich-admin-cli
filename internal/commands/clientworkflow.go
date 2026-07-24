@@ -414,12 +414,23 @@ func repairAssetsCommand() *cli.Command {
 			"file via the replace-asset flow (upload → checksum verify → copy metadata → " +
 			"remove original).\n\n" +
 			"Modes:\n" +
-			"  marker     append the missing JPEG End-of-Image marker (FF D9). Lossless, EXIF preserved.\n" +
-			"  tiff-tags  patch TIFF IFD entries with an invalid zero count field (the exact defect " +
+			"  marker        append the missing JPEG End-of-Image marker (FF D9). Lossless, EXIF preserved.\n" +
+			"  tiff-tags     patch TIFF IFD entries with an invalid zero count field (the exact defect " +
 			"libtiff rejects as \"Null count for Tag N\", breaking Immich's thumbnailer). Lossless: " +
 			"only the 4-byte count field of each offending entry is changed, pixel data and all " +
 			"metadata (EXIF/XMP/dates) are untouched.\n" +
-			"  all        run every safe strategy across both file types (currently marker + tiff-tags).\n\n" +
+			"  takeout-json  DELETE mode (not a repair): find assets whose bytes are actually a Google " +
+			"Photos Takeout metadata JSON sidecar imported in place of the real photo — the file has " +
+			"no image data and is unrecoverable — and delete them (to trash by default; --force to " +
+			"delete permanently). Detection is structural: the leading JSON object must parse AND carry " +
+			"the full Google fingerprint (title + photoTakenTime.timestamp + creationTime.timestamp + " +
+			"googlePhotosOrigin), so a real image can never match. Use --dry-run to only detect. This " +
+			"mode is opt-in only and is NOT included in 'all'.\n" +
+			"  all           run every safe repair strategy across both file types (currently marker + " +
+			"tiff-tags). Excludes the destructive takeout-json mode.\n\n" +
+			"When a repair mode (marker/tiff-tags/all) encounters an asset that is actually a Google " +
+			"Takeout JSON sidecar rather than a repairable image, it reports it as unrepairable and " +
+			"prints a hint to rerun that asset with --mode takeout-json to delete it.\n\n" +
 			"Detection is structural, not a blind per-file-type guess: tiff-tags only applies when the " +
 			"file's IFD chain parses cleanly AND at least one entry has the invalid zero count field — " +
 			"a TIFF without that specific defect is reported as already-ok, never modified.\n\n" +
@@ -439,7 +450,7 @@ func repairAssetsCommand() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:  "mode",
-				Usage: "repair mode: all | marker | tiff-tags",
+				Usage: "repair mode: all | marker | tiff-tags | takeout-json",
 				Value: "all",
 			},
 			idsFileFlag(),
@@ -489,6 +500,10 @@ func clientWorkflowRepairAssets(ctx context.Context, cmd *cli.Command) error {
 	keepOriginal := cmd.Bool("keep-original")
 	force := cmd.Bool("force")
 	yes := cmd.Bool("yes")
+
+	if mode == workflows.RepairModeTakeoutJSON && keepOriginal {
+		return fmt.Errorf("--keep-original is not applicable to --mode takeout-json (the file is an unrecoverable JSON sidecar, there is nothing to keep); use --dry-run to only detect without deleting")
+	}
 
 	// Resolve the asset source: exactly one of explicit IDs (positional and/or
 	// --ids-file), --check-all-assets, or --album-id.
@@ -566,7 +581,11 @@ func clientWorkflowRepairAssets(ctx context.Context, cmd *cli.Command) error {
 		if force {
 			disposition = "permanently deleted"
 		}
-		fmt.Printf("This will attempt to repair %d asset(s); each original will be %s once its repaired replacement is uploaded and verified (checksum + metadata copy), regardless of whether Immich has generated a thumbnail for it yet.\n", len(ids), disposition)
+		if mode == workflows.RepairModeTakeoutJSON {
+			fmt.Printf("This will scan %d asset(s); any confirmed Google Takeout JSON sidecar (a file with no recoverable image data) will be %s. Non-sidecar files are left untouched.\n", len(ids), disposition)
+		} else {
+			fmt.Printf("This will attempt to repair %d asset(s); each original will be %s once its repaired replacement is uploaded and verified (checksum + metadata copy), regardless of whether Immich has generated a thumbnail for it yet.\n", len(ids), disposition)
+		}
 		fmt.Print("Proceed? [y/N]: ")
 		if !confirm(os.Stdin) {
 			fmt.Println("Aborted.")
@@ -600,13 +619,21 @@ func clientWorkflowRepairAssets(ctx context.Context, cmd *cli.Command) error {
 		},
 	)
 
-	fmt.Printf("\nSummary: repaired=%d already-ok=%d skipped-unsupported=%d unrepairable=%d (of %d)\n",
-		counts[workflows.OutcomeRepaired],
-		counts[workflows.OutcomeAlreadyOK],
-		counts[workflows.OutcomeSkippedUnsupported],
-		counts[workflows.OutcomeUnrepairable],
-		len(ids),
-	)
+	if mode == workflows.RepairModeTakeoutJSON {
+		fmt.Printf("\nSummary: deleted-sidecar=%d skipped-not-sidecar=%d (of %d)\n",
+			counts[workflows.OutcomeDeletedSidecar],
+			counts[workflows.OutcomeSkippedUnsupported],
+			len(ids),
+		)
+	} else {
+		fmt.Printf("\nSummary: repaired=%d already-ok=%d skipped-unsupported=%d unrepairable=%d (of %d)\n",
+			counts[workflows.OutcomeRepaired],
+			counts[workflows.OutcomeAlreadyOK],
+			counts[workflows.OutcomeSkippedUnsupported],
+			counts[workflows.OutcomeUnrepairable],
+			len(ids),
+		)
+	}
 
 	return runErr
 }
