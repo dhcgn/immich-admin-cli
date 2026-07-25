@@ -117,7 +117,7 @@ func clientWorkflowTagDelete(ctx context.Context, cmd *cli.Command) error {
 	dryRun := cmd.Bool("dry-run")
 	yes := cmd.Bool("yes")
 
-	c, err := newClient(cmd)
+	c, err := newClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
@@ -191,7 +191,7 @@ func clientWorkflowReplaceAsset(ctx context.Context, cmd *cli.Command) error {
 		}
 	}
 
-	c, err := newClient(cmd)
+	c, err := newClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
@@ -353,7 +353,7 @@ func findNoThumbhashCommand() *cli.Command {
 }
 
 func clientWorkflowFindNoThumbhash(ctx context.Context, cmd *cli.Command) error {
-	c, err := newClient(cmd)
+	c, err := newClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
@@ -522,7 +522,7 @@ func clientWorkflowRepairAssets(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("choose exactly one asset source: asset IDs / --ids-file, --check-all-assets, or --album-id")
 	}
 
-	c, err := newClient(cmd)
+	c, err := newClient(ctx, cmd)
 	if err != nil {
 		return err
 	}

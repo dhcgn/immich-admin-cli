@@ -36,7 +36,7 @@ func Users() *cli.Command {
 }
 
 func usersMe(ctx context.Context, cmd *cli.Command) error {
-	c, err := newClient(cmd)
+	c, err := newClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
