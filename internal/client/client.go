@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -20,6 +21,8 @@ import (
 type Client struct {
 	// API exposes the generated typed operations (e.g. GetMyUserWithResponse).
 	API *immichapi.ClientWithResponses
+	// Server is the origin of the Immich instance (e.g. https://immich.example.com/).
+	Server string
 }
 
 // New builds an authenticated client from the config. The spec declares
@@ -38,7 +41,7 @@ func New(cfg *config.Config) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating API client for %q: %w", baseURL, err)
 	}
-	return &Client{API: api}, nil
+	return &Client{API: api, Server: strings.TrimRight(cfg.Server, "/")}, nil
 }
 
 // httpClient returns an http.Client that fails fast on unreachable servers
@@ -71,4 +74,20 @@ func Check(resp Response, want int) error {
 			resp.Status(), want, strings.TrimSpace(string(resp.GetBody())))
 	}
 	return nil
+}
+
+// PrintIdentity fetches the current user and prints the identity line
+// (email + server URL) to stderr so users always know which account and
+// instance they are operating against.
+func (c *Client) PrintIdentity(ctx context.Context) {
+	resp, err := c.API.GetMyUserWithResponse(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ could not verify identity: %v\n", err)
+		return
+	}
+	if resp.StatusCode() != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "⚠ could not verify identity: %s\n", resp.Status())
+		return
+	}
+	fmt.Fprintf(os.Stderr, "%s (%s)\n", resp.JSON200.Email, c.Server)
 }

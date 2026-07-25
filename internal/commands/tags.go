@@ -66,7 +66,7 @@ func Tags() *cli.Command {
 }
 
 func tagsList(ctx context.Context, cmd *cli.Command) error {
-	c, err := newClient(cmd)
+	c, err := newClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
@@ -103,7 +103,7 @@ func tagsGet(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	c, err := newClient(cmd)
+	c, err := newClient(ctx, cmd)
 	if err != nil {
 		return err
 	}
@@ -172,7 +172,7 @@ func tagsDelete(ctx context.Context, cmd *cli.Command) error {
 		}
 	}
 
-	c, err := newClient(cmd)
+	c, err := newClient(ctx, cmd)
 	if err != nil {
 		return err
 	}

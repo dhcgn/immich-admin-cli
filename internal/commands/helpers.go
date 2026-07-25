@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -17,12 +18,18 @@ import (
 
 // newClient loads the config named by the root --config flag and returns an
 // authenticated API client. Every command action starts with this one call.
-func newClient(cmd *cli.Command) (*client.Client, error) {
+// It prints the current user identity to stderr for safety.
+func newClient(ctx context.Context, cmd *cli.Command) (*client.Client, error) {
 	cfg, err := config.Load(cmd.String("config"))
 	if err != nil {
 		return nil, err
 	}
-	return client.New(cfg)
+	c, err := client.New(cfg)
+	if err != nil {
+		return nil, err
+	}
+	c.PrintIdentity(ctx)
+	return c, nil
 }
 
 // idsFileFlag is the shared flag for bulk commands that read asset IDs from a
