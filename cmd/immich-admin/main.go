@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	ghupdate "github.com/dhcgn/gh-update"
 	"github.com/urfave/cli/v3"
 
 	"github.com/dhcgn/immich-admin-cli/internal/commands"
@@ -19,6 +20,19 @@ var (
 )
 
 func main() {
+	// After `update` replaces the executable in place, gh-update restarts it
+	// with FINISH_UPDATE=1 and the old PID set. This new process cleans up
+	// the old binary's ".old" backup file before doing anything else.
+	if ghupdate.IsFirstStartAfterUpdate() {
+		oldPid := ghupdate.GetOldPid()
+		if oldPid != fmt.Sprint(os.Getpid()) {
+			if err := ghupdate.CleanUpAfterUpdate(os.Args[0], oldPid); err != nil {
+				fmt.Fprintln(os.Stderr, "Warning: failed to clean up previous version:", err)
+			}
+		}
+		fmt.Printf("Updated to %s.\n", version)
+	}
+
 	root := &cli.Command{
 		Name:    "immich-admin",
 		Usage:   "Administer an Immich photo server",
@@ -40,6 +54,7 @@ func main() {
 			commands.Tags(),
 			commands.Users(),
 			commands.ClientWorkflow(),
+			commands.Update(version),
 		},
 	}
 
