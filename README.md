@@ -41,6 +41,7 @@ All workflows follow the same safety model: `--dry-run` shows what would happen 
 | ✅ done | `client-workflow add-users-to-album-with-pattern` | Share every album whose name matches an include/exclude regex with a user |
 | ✅ done | `client-workflow find-no-thumbhash` | Find assets without a thumbhash (likely corrupt or unprocessed) |
 | ✅ done | `client-workflow repair-assets` | Repair corrupt JPEG (missing EOI marker) and TIFF (invalid zero-count IFD tag) assets and re-import them, keeping metadata |
+| ✅ done | `client-workflow fix-album-dates` | Check assets in date-named albums ("2025-07-04 Garten", "2010 USA") against the date implied by the album name, and offer to fix mismatches |
 | ⏳ planned | `client-workflow reencode-jxl` | Re-encode assets to JPEG XL (`cjxl`), then replace the originals |
 | ⏳ planned | `client-workflow reencode-jpegli` | Re-encode assets with jpegli (`cjpegli`), then replace the originals |
 
@@ -204,6 +205,50 @@ immich-admin cw repair-assets --mode takeout-json --check-all-assets --yes
 The asset source is exactly one of: explicit IDs (positional and/or `--ids-file`), `--check-all-assets` (whole library), or `--album-id` (one album). With `--album-id` the album is validated first (`getAlbumInfo`) and its name/asset count are printed, then only that album's IMAGE assets with no thumbhash are scanned and repaired.
 
 Flags: `--mode all|marker|tiff-tags|takeout-json` (default `all`), `--ids-file FILE`, `--check-all-assets` (scan all no-thumbhash IMAGE assets), `--album-id UUID` (scan only that album — mutually exclusive with explicit IDs and `--check-all-assets`), `--keep-original` (repair + re-import but leave the original untouched; not valid with `takeout-json`), `--force` (permanently delete instead of trashing), `--page-size N` (for `--check-all-assets` / `--album-id`, default 250), `--dry-run`, `--yes`. Assets with no applicable strategy for the chosen mode (e.g. non-JPEG/TIFF files, or unsupported RAW/DNG variants such as JPEG-XL-compressed DNGs) are skipped and reported. A per-asset outcome summary is printed at the end — `repaired / already-ok / skipped-unsupported / unrepairable` for the repair modes, or `deleted-sidecar / skipped-not-sidecar` for `takeout-json`.
+
+### `client-workflow fix-album-dates`
+
+Checks date plausibility for albums named after a date, and offers to fix stragglers:
+
+1. **Fetch** all albums (`GET /albums`) and keep the ones whose name matches `yyyy-MM-dd <title>` (e.g. "2025-07-04 Garten") or `yyyy <title>` (e.g. "2010 USA")
+2. **Fetch** each matched album's assets (`POST /search/metadata`, filtered by album)
+3. **Compare** each asset's local capture date (`LocalDateTime`) against the range implied by the album name — that exact day, or the whole year
+4. **Report** every mismatch found, worst album first (the album containing the single most out-of-range asset), each with a link to the album in the web UI
+5. **Fix** — for exact-day albums only, offer to set the mismatched asset's date to the album's date, changing only the date and keeping the original time of day (`PUT /assets/{id}`)
+
+Year-only albums (e.g. "2010 USA") are report-only: there's no single unambiguous date to reset an outlier to, so their mismatches are listed but never auto-fixed — this applies whether an asset falls outside the year itself or outside the `--offset-days`-widened boundary around it.
+
+> 🕒 **Time zones**: the check uses `LocalDateTime`, Immich's own timezone-agnostic "photographer's local time" field (derived from EXIF) — not the UTC `fileCreatedAt` timestamp. The album name's date is parsed the same timezone-naive way, so no timezone conversion happens (or is needed) in the comparison itself. What timezones *can* still cause is a boundary slip: a camera whose clock/timezone or DST was set wrong around midnight can push `LocalDateTime` into the neighboring calendar day even though the photo was taken at the same real moment as the rest of the album. `--offset-days` (default `2`) exists specifically to absorb that: it widens the accepted range by that many days on each side before flagging a mismatch, without changing the date a fix would apply (always the album's exact nominal date).
+
+> 💡 **Not every mismatch is a data-entry error.** Many albums are named after an anchor/start date but deliberately include photos from a wider range (multi-day trips, a themed album with a few older cover photos, etc.) — these are correctly detected as "outside the range" but fixing them would be wrong. Always review the printed report (or use `--dry-run`) before fixing, and prefer `--interactive` to accept or skip album-by-album rather than one bulk confirmation. `--interactive` shows and asks about one album at a time (instead of printing the whole report up front) so each prompt stays right below the details it refers to, without having to scroll back up. Each confirmed album is fixed immediately, right after you answer — not batched until the end — so pressing Ctrl+C at any point never loses an already-confirmed album; only albums not yet reached stay unfixed (just rerun the command to pick up where you left off). The bulk (non-interactive) confirmation instead warns plainly that it changes every listed asset automatically, with no per-album review.
+
+```sh
+# Preview issues across every date-named album
+immich-admin client-workflow fix-album-dates --dry-run
+
+# Use a narrower (or wider) tolerance than the default 2 days
+immich-admin cw fix-album-dates --offset-days 1 --dry-run
+
+# Review and fix album-by-album
+immich-admin cw fix-album-dates --interactive
+
+# Fix everything in one bulk confirmation
+immich-admin cw fix-album-dates --yes
+```
+
+Sample report line (each flagged album is followed by a link to it in the web UI, using the configured `server`, and each fixable asset shows the date it would be changed to):
+
+```
+2025-07-04 Garten (d4856b75-7700-414c-9dc2-4f6d501936d1)  pattern=day  range=2025-07-04..2025-07-05 (±2 day(s))
+https://immich.example.com/albums/d4856b75-7700-414c-9dc2-4f6d501936d1
+  a1b2c3d4-...  IMG_1234.jpg  local=2025-07-09 14:04:02  -> 2025-07-04 14:04:02
+```
+
+Flags: `--dry-run`, `--offset-days N` (default `2`; allow assets up to N days before/after the album's date before flagging them), `--interactive`/`-i` (ask once per album instead of one bulk confirmation), `--yes` (skip all prompts — bulk or interactive).
+
+> ⚠️ Without `--interactive`, confirming prints an explicit warning that it will change every listed asset automatically, with no per-album review (e.g. "This changes 1293 asset(s) automatically, without reviewing each one individually").
+
+> ⚠️ **This is the one deliberate exception to this project's rule against deprecated endpoints.** Fixing a date calls `PUT /assets/{id}` (`updateAsset`), the only Immich API that can set an asset's capture date — it is marked deprecated upstream with a self-referential (i.e. non-existent) `replacementId`, so no working replacement exists. See `.github/copilot-instructions.md` for the exact scope of this exception.
 
 ## Sample Use Cases
 
@@ -467,7 +512,7 @@ Or save the IDs to a file for use with bulk commands (`--ids-file`):
 
 <!-- Generated by tools/apitable — do not edit between the markers. Refresh with `go generate ./...` -->
 <!-- API-TABLE:BEGIN -->
-**15 of 235 endpoints implemented** (17 deprecated and 2 internal endpoints omitted per project policy).
+**18 of 235 endpoints implemented** (17 deprecated and 2 internal endpoints omitted per project policy).
 
 <details>
 <summary><b>API keys</b> (0/5)</summary>
@@ -895,18 +940,18 @@ Or save the IDs to a file for use with bulk commands (`--ids-file`):
 </details>
 
 <details>
-<summary><b>Tags</b> (3/8)</summary>
+<summary><b>Tags</b> (6/8)</summary>
 
 | Impl | Method | Path | Operation | State |
 |:----:|--------|------|-----------|-------|
 | ✅ | GET | `/tags` | `getAllTags` | Stable |
 |  | POST | `/tags` | `createTag` | Stable |
-|  | PUT | `/tags` | `upsertTags` | Stable |
-|  | PUT | `/tags/assets` | `bulkTagAssets` | Stable |
+| ✅ | PUT | `/tags` | `upsertTags` | Stable |
+| ✅ | PUT | `/tags/assets` | `bulkTagAssets` | Stable |
 | ✅ | DELETE | `/tags/{id}` | `deleteTag` | Stable |
 | ✅ | GET | `/tags/{id}` | `getTagById` | Stable |
 |  | DELETE | `/tags/{id}/assets` | `untagAssets` | Stable |
-|  | PUT | `/tags/{id}/assets` | `tagAssets` | Stable |
+| ✅ | PUT | `/tags/{id}/assets` | `tagAssets` | Stable |
 
 </details>
 
