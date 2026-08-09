@@ -16,6 +16,18 @@
 I want to be able to manage my Immich server from the command line for my large photo collection.
 There are some bulk features that are not available in the web interface, and I want to be able to automate some tasks. Like compression, converting, repairing, and deleting photos.
 
+## Self-Update
+
+`immich-admin update` checks the latest [GitHub release](https://github.com/dhcgn/immich-admin-cli/releases) for a build matching the current OS/arch and, on confirmation, replaces the running executable in place and restarts it (via [`gh-update`](https://github.com/dhcgn/gh-update)).
+
+```sh
+immich-admin update            # check, prompt, then install
+immich-admin update --check    # only check, don't install
+immich-admin update --yes      # install without prompting
+```
+
+Release binaries are named `immich-admin_<os>_<arch>[.exe]` — deliberately **without** a version number, since `update` overwrites the file in place while keeping its original name; a version baked into the filename would go stale as soon as it self-updates. Use `immich-admin --version` or the release tag to see what's actually installed.
+
 ## Client Workflows
 
 The main purpose of this tool: **client workflows** are multi-step orchestrations that combine several Immich API calls with local processing (e.g. re-encoding) into one command. They run entirely on the client — not to be confused with Immich's server-side Workflows API.
