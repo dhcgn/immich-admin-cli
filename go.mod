@@ -3,6 +3,7 @@ module github.com/dhcgn/immich-admin-cli
 go 1.26.1
 
 require (
+	github.com/dhcgn/gh-update v0.0.3
 	github.com/google/uuid v1.6.0
 	github.com/oapi-codegen/runtime v1.6.0
 	github.com/spf13/viper v1.21.0

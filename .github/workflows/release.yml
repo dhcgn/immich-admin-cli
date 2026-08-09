@@ -54,7 +54,12 @@ jobs:
             GOARCH=${target#*/}
             EXT=""
             [ "$GOOS" = "windows" ] && EXT=".exe"
-            OUT="dist/immich-admin_${VERSION}_${GOOS}_${GOARCH}${EXT}"
+            # No version in the filename: `immich-admin update` replaces this
+            # binary in place, keeping its original name, so a version baked
+            # into the name would go stale the moment it self-updates. The
+            # `immich-admin --version` output and the release tag remain the
+            # source of truth for the installed version.
+            OUT="dist/immich-admin_${GOOS}_${GOARCH}${EXT}"
             echo "Building $OUT"
             GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags "$LDFLAGS" -o "$OUT" ./cmd/immich-admin
           done
