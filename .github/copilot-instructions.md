@@ -13,6 +13,7 @@ This is a **Go CLI tool** for administering an Immich photo server. It enables b
 - Respect required vs. optional parameters as defined in the spec.
 - Use the `x-immich-history` field to prefer stable (`"state": "Stable"`) endpoints over beta ones.
 - **Never use deprecated endpoints.** An endpoint is deprecated if it has `"deprecated": true` at the operation level OR if `"Deprecated"` appears in its `tags` array. Use the `replacementId` in `x-immich-history` to find the replacement.
+  - **One documented exception**: `updateAsset` (`PUT /assets/{id}`) is deprecated upstream with a self-referential `replacementId` (i.e. no real replacement exists) — it is the only Immich API that can set an asset's capture date. It is used deliberately and narrowly by `assets update` and `client-workflow fix-album-dates`. Do not use the bulk `updateAssets` variant or extend this exception to any other deprecated endpoint without the same "no alternative exists" verification.
 - Authentication: the spec defines three security schemes — `bearer` (Authorization header), `cookie`, and `api_key` (x-api-key header). Prefer `api_key` for CLI usage.
 
 ## Language & Style

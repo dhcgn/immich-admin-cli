@@ -37,6 +37,7 @@ func ClientWorkflow() *cli.Command {
 			addUsersToAlbumWithPatternCommand(),
 			findNoThumbhashCommand(),
 			repairAssetsCommand(),
+			fixAlbumDatesCommand(),
 		},
 	}
 }
@@ -465,6 +466,206 @@ func readReplacePairLines(path string) ([]string, error) {
 		return nil, fmt.Errorf("reading replace-file %q: %w", path, err)
 	}
 	return lines, nil
+}
+
+func fixAlbumDatesCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "fix-album-dates",
+		Usage: "Check assets in date-named albums against the date implied by the album name, and offer to fix mismatches",
+		Description: "Scans every album whose name matches \"yyyy-MM-dd <title>\" (e.g. \"2025-07-04 Garten\") or " +
+			"\"yyyy <title>\" (e.g. \"2010 USA\"), fetches its assets, and flags any whose local capture date falls " +
+			"outside the range implied by the name. For exact-day albums, offers to fix mismatches by setting the " +
+			"asset's date to the album's date (keeping the original time of day). Year-only albums have no single " +
+			"unambiguous date to fix to, so their mismatches are reported only, never changed.\n" +
+			"This is the one deliberate exception to this project's rule against deprecated endpoints: fixing " +
+			"uses PUT /assets/{id} (updateAsset), the only Immich API that can set an asset's capture date, which " +
+			"upstream marks deprecated with no working replacement.",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:  "dry-run",
+				Usage: "print the planned date fixes without changing anything",
+			},
+			&cli.IntFlag{
+				Name:  "offset-days",
+				Usage: "allow assets up to this many days before/after the album's date before flagging them (absorbs camera timezone/DST boundary slack)",
+				Value: workflows.DefaultOffsetDays,
+			},
+			&cli.BoolFlag{
+				Name:    "interactive",
+				Aliases: []string{"i"},
+				Usage:   "ask once per album (y/N) instead of one bulk confirmation; --yes overrides this and skips all prompts",
+			},
+			&cli.BoolFlag{
+				Name:  "yes",
+				Usage: "skip the confirmation prompt(s) before fixing dates",
+			},
+		},
+		Action: clientWorkflowFixAlbumDates,
+	}
+}
+
+func clientWorkflowFixAlbumDates(ctx context.Context, cmd *cli.Command) error {
+	if cmd.Args().Len() > 0 {
+		return fmt.Errorf("fix-album-dates takes no positional arguments (got %v)", cmd.Args().Slice())
+	}
+
+	dryRun := cmd.Bool("dry-run")
+	interactive := cmd.Bool("interactive")
+	yes := cmd.Bool("yes")
+
+	c, err := newClient(ctx, cmd)
+	if err != nil {
+		return err
+	}
+
+	opts := workflows.FixAlbumDatesOptions{DryRun: dryRun, OffsetDays: int(cmd.Int("offset-days"))}
+
+	checks, err := workflows.CheckAlbumDates(ctx, c, opts)
+	if err != nil {
+		return err
+	}
+
+	if fixableCount(checks) == 0 {
+		printAlbumDateChecks(checks, c.Server, opts.OffsetDays) // still show any report-only issues
+		fmt.Println("Nothing to fix.")
+		return nil
+	}
+
+	fmt.Println("Note: fixing uses the deprecated PUT /assets/{id} endpoint — Immich has not shipped a replacement for setting an asset's capture date.")
+
+	// --interactive shows, confirms, and applies one album at a time (rather
+	// than batching every fix to the end) so a prompt never refers back to
+	// details scrolled off-screen, and Ctrl+C at any point can never lose an
+	// already-confirmed album — only albums not yet reached stay unfixed
+	// (rerun the command to pick them up). --yes always wins and skips every
+	// prompt (bulk or per-album).
+	if interactive && !yes {
+		return reviewAndFixAlbumDatesInteractively(ctx, os.Stdin, os.Stdout, checks, c.Server, opts,
+			func(ctx context.Context, checks []workflows.AlbumDateCheck, opts workflows.FixAlbumDatesOptions) error {
+				return workflows.FixAlbumDates(ctx, c, checks, opts)
+			})
+	}
+
+	fixable := printAlbumDateChecks(checks, c.Server, opts.OffsetDays)
+	if !dryRun && !yes {
+		fmt.Printf("⚠️  This changes %d asset(s) automatically, without reviewing each one individually — consider --interactive or --dry-run instead.\n", fixable)
+		fmt.Printf("Really change all %d asset(s) now? [y/N]: ", fixable)
+		if !confirm(os.Stdin) {
+			fmt.Println("Aborted.")
+			return nil
+		}
+	}
+
+	return workflows.FixAlbumDates(ctx, c, checks, opts)
+}
+
+// printAlbumDateCheck prints one album's report block to w: header line, web
+// UI link, and one line per mismatched asset showing its current
+// LocalDateTime and, for day-precision albums, the date it would be fixed
+// to.
+func printAlbumDateCheck(w io.Writer, check workflows.AlbumDateCheck, server string, offsetDays int) {
+	fmt.Fprintf(w, "%s (%s)  pattern=%s  range=%s..%s (\u00b1%d day(s))\n",
+		check.Album.AlbumName, check.Album.Id, check.Pattern.Kind,
+		check.Pattern.From.Format("2006-01-02"), check.Pattern.To.Format("2006-01-02"), offsetDays)
+	fmt.Fprintf(w, "%s/albums/%s\n", server, check.Album.Id)
+	for _, a := range check.Mismatches {
+		if check.Pattern.Kind == workflows.PatternDay {
+			fixed, _ := workflows.ComputeFixedDateTime(a, check.Pattern)
+			fmt.Fprintf(w, "  %s  %s  local=%s  -> %s\n", a.Id, a.OriginalFileName, a.LocalDateTime.Format("2006-01-02 15:04:05"), fixed.Format("2006-01-02 15:04:05"))
+		} else {
+			fmt.Fprintf(w, "  %s  %s  local=%s  (report only, no automatic fix)\n", a.Id, a.OriginalFileName, a.LocalDateTime.Format("2006-01-02 15:04:05"))
+		}
+	}
+}
+
+// reviewAndFixAlbumDatesInteractively shows and asks about one album at a
+// time (via in/out) and, on "y", applies that album's fix immediately via
+// fix (workflows.FixAlbumDates in production; tests inject a fake) before
+// moving on — rather than collecting decisions and fixing everything only
+// after the whole review finishes. This means Ctrl+C (or closed/short piped
+// stdin) at any point can never lose an already-confirmed album; only
+// albums not yet reached stay unfixed. Year-only albums are shown (report
+// only, see workflows.ComputeFixedDateTime) without asking. A failed fix is
+// reported and the review continues to the next album (same continue-on-
+// error convention as workflows.RunBatch); the returned error summarizes
+// how many albums failed, or nil if every attempted fix succeeded.
+func reviewAndFixAlbumDatesInteractively(
+	ctx context.Context,
+	in io.Reader, out io.Writer,
+	checks []workflows.AlbumDateCheck,
+	server string, opts workflows.FixAlbumDatesOptions,
+	fix func(ctx context.Context, checks []workflows.AlbumDateCheck, opts workflows.FixAlbumDatesOptions) error,
+) error {
+	scanner := bufio.NewScanner(in)
+	fixed, failed := 0, 0
+
+	for _, check := range checks {
+		if len(check.Mismatches) == 0 {
+			continue
+		}
+		printAlbumDateCheck(out, check, server, opts.OffsetDays)
+
+		if check.Pattern.Kind != workflows.PatternDay {
+			continue
+		}
+
+		fmt.Fprintf(out, "Fix %d asset(s) in %q? [y/N]: ", len(check.Mismatches), check.Album.AlbumName)
+		if !scanner.Scan() {
+			break
+		}
+		answer := strings.ToLower(strings.TrimSpace(scanner.Text()))
+		if answer != "y" && answer != "yes" {
+			continue
+		}
+
+		if err := fix(ctx, []workflows.AlbumDateCheck{check}, opts); err != nil {
+			fmt.Fprintf(out, "Error: %s: %v\n", check.Album.AlbumName, err)
+			failed++
+			continue
+		}
+		fixed += len(check.Mismatches)
+	}
+
+	fmt.Fprintf(out, "--- %d asset(s) fixed ---\n", fixed)
+	if failed > 0 {
+		return fmt.Errorf("%d album(s) failed to fix", failed)
+	}
+	return nil
+}
+
+// fixableCount returns the number of day-precision mismatches across checks
+// (the same count printAlbumDateChecks reports, without re-printing).
+func fixableCount(checks []workflows.AlbumDateCheck) int {
+	n := 0
+	for _, check := range checks {
+		if check.Pattern.Kind == workflows.PatternDay {
+			n += len(check.Mismatches)
+		}
+	}
+	return n
+}
+
+// printAlbumDateChecks prints a report of every album that had at least one
+// date mismatch (worst-deviation album first, see workflows.CheckAlbumDates)
+// and returns the number of mismatches that a fix can actually be offered
+// for (day-precision albums only; year-precision mismatches are report-only
+// and are printed but not counted).
+func printAlbumDateChecks(checks []workflows.AlbumDateCheck, server string, offsetDays int) int {
+	withIssues := 0
+	fixable := 0
+	for _, check := range checks {
+		if len(check.Mismatches) == 0 {
+			continue
+		}
+		withIssues++
+		printAlbumDateCheck(os.Stdout, check, server, offsetDays)
+		if check.Pattern.Kind == workflows.PatternDay {
+			fixable += len(check.Mismatches)
+		}
+	}
+
+	fmt.Printf("--- %d date-pattern album(s) scanned, %d with issue(s), %d asset(s) fixable ---\n", len(checks), withIssues, fixable)
+	return fixable
 }
 
 func findNoThumbhashCommand() *cli.Command {
