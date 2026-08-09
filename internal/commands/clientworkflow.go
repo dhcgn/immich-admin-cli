@@ -36,6 +36,7 @@ func ClientWorkflow() *cli.Command {
 			tagDeleteCommand(),
 			addUsersToAlbumWithPatternCommand(),
 			findNoThumbhashCommand(),
+			findHEICTileDefectCommand(),
 			repairAssetsCommand(),
 			fixAlbumDatesCommand(),
 		},
@@ -758,6 +759,161 @@ func clientWorkflowFindNoThumbhash(ctx context.Context, cmd *cli.Command) error 
 			fmt.Printf("%s\t%s\t%s\n", a.ID, a.OriginalFileName, a.Type)
 		}
 	}
+
+	return nil
+}
+
+func findHEICTileDefectCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "find-heic-tile-defect",
+		Usage: "Find HEIC/HEIF assets whose dimensions trigger a known Immich thumbnail-corruption defect",
+		Description: "Scans all IMAGE assets matching optional pre-filters and reports the HEIC/HEIF " +
+			"ones whose pixel width or height is not an exact multiple of the HEIF grid tile size " +
+			"(512px by default). HEIC/HEIF files store large images as a grid of tiles; when the " +
+			"image dimensions aren't an exact multiple of the tile size the last row/column of " +
+			"tiles must be cropped, and Immich's thumbnailer (libvips/libheif) has been observed to " +
+			"render a garbled, low-detail preview/thumbnail for such files instead of the real " +
+			"image — confirmed by independently decoding several affected assets, where the " +
+			"original bytes are completely fine. HEIC produced by desktop conversion tools (e.g. " +
+			"Zoner Photo Studio X, DxO PhotoLab) reliably hits this because they tile at a fixed " +
+			"default size regardless of the source image's dimensions; camera/phone-native HEIC " +
+			"tends to avoid it.\n\n" +
+			"This is a structural heuristic based on dimensions alone, not a guaranteed defect — " +
+			"treat matches as candidates for manual/visual confirmation (e.g. compare the asset's " +
+			"thumbnail in the web UI against the downloaded original) before replacing or deleting " +
+			"anything. By default this is a non-destructive, read-only workflow — it only reports " +
+			"assets. Pass --apply-tag to additionally tag every found candidate with --tag (creating " +
+			"the tag, and any missing parent tags, if needed) so they can be found again later in the " +
+			"web UI. Fix candidates by re-exporting/re-converting the source file (e.g. without HEIC " +
+			"tiling, or as JPEG) and re-importing it with 'client-workflow replace-asset'.",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "original-file-name",
+				Aliases: []string{"n"},
+				Usage:   "pre-filter by original file name (substring match)",
+			},
+			&cli.StringFlag{
+				Name:  "album-id",
+				Usage: "restrict the scan to assets in this album `UUID`",
+			},
+			&cli.IntFlag{
+				Name:  "page-size",
+				Usage: "number of assets per API page (max 1000)",
+				Value: 250,
+			},
+			&cli.IntFlag{
+				Name:  "tile-size",
+				Usage: "assumed HEIF grid tile size in pixels",
+				Value: 512,
+			},
+			&cli.BoolFlag{
+				Name:  "json",
+				Usage: "print results as JSON array",
+			},
+			&cli.BoolFlag{
+				Name:    "ids-only",
+				Aliases: []string{"q"},
+				Usage:   "print only asset IDs, one per line",
+			},
+			&cli.BoolFlag{
+				Name:  "apply-tag",
+				Usage: "tag every found candidate asset with --tag (default: report only, no tagging)",
+			},
+			&cli.StringFlag{
+				Name:  "tag",
+				Usage: "tag value (full path) applied to found candidates when --apply-tag is set",
+				Value: "immich-admin-cli/corrupt-heic",
+			},
+			&cli.BoolFlag{
+				Name:  "dry-run",
+				Usage: "with --apply-tag, print what would be tagged without changing anything",
+			},
+		},
+		Action: clientWorkflowFindHEICTileDefect,
+	}
+}
+
+func clientWorkflowFindHEICTileDefect(ctx context.Context, cmd *cli.Command) error {
+	c, err := newClient(ctx, cmd)
+	if err != nil {
+		return err
+	}
+
+	opts := workflows.FindHEICTileDefectOptions{
+		PageSize:         cmd.Int("page-size"),
+		TileSize:         cmd.Int("tile-size"),
+		OriginalFileName: cmd.String("original-file-name"),
+	}
+
+	if albumIDStr := cmd.String("album-id"); albumIDStr != "" {
+		albumID, perr := uuid.Parse(albumIDStr)
+		if perr != nil {
+			return fmt.Errorf("invalid --album-id %q: %w", albumIDStr, perr)
+		}
+		opts.AlbumIDs = []openapi_types.UUID{albumID}
+	}
+
+	results, err := workflows.FindAssetsWithHEICTileDefect(ctx, c, opts)
+	if err != nil {
+		return err
+	}
+
+	if len(results) == 0 {
+		fmt.Println("No HEIC tile-defect candidates found.")
+		return nil
+	}
+
+	switch {
+	case cmd.Bool("json"):
+		raw, jsonErr := json.MarshalIndent(results, "", "  ")
+		if jsonErr != nil {
+			return fmt.Errorf("marshalling results: %w", jsonErr)
+		}
+		fmt.Println(string(raw))
+
+	case cmd.Bool("ids-only"):
+		for _, a := range results {
+			fmt.Println(a.ID)
+		}
+
+	default:
+		fmt.Printf("Found %d HEIC tile-defect candidate(s) (verify visually before acting):\n", len(results))
+		for _, a := range results {
+			fmt.Printf("%s\t%dx%d\t%s\n", a.ID, a.Width, a.Height, a.OriginalFileName)
+		}
+	}
+
+	if !cmd.Bool("apply-tag") {
+		return nil
+	}
+
+	tagValue := cmd.String("tag")
+	if tagValue == "" {
+		return fmt.Errorf("--tag must not be empty when --apply-tag is set")
+	}
+
+	if cmd.Bool("dry-run") {
+		fmt.Printf("[dry-run] would tag %d asset(s) with %q\n", len(results), tagValue)
+		return nil
+	}
+
+	ids := make([]openapi_types.UUID, len(results))
+	for i, a := range results {
+		id, perr := uuid.Parse(a.ID)
+		if perr != nil {
+			return fmt.Errorf("parsing asset ID %q: %w", a.ID, perr)
+		}
+		ids[i] = id
+	}
+
+	tagID, err := workflows.ResolveOrCreateTag(ctx, c, tagValue)
+	if err != nil {
+		return err
+	}
+	if err := workflows.TagAssets(ctx, c, ids, tagID); err != nil {
+		return err
+	}
+	fmt.Printf("Tagged %d asset(s) with %q (tag id %s)\n", len(ids), tagValue, tagID)
 
 	return nil
 }
