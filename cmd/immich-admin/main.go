@@ -35,6 +35,7 @@ func main() {
 		},
 		Commands: []*cli.Command{
 			commands.Assets(),
+			commands.Albums(),
 			commands.Search(),
 			commands.Tags(),
 			commands.Users(),

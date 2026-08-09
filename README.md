@@ -26,6 +26,7 @@ All workflows follow the same safety model: `--dry-run` shows what would happen 
 |:------:|---------|-------------|
 | ✅ done | `client-workflow replace-asset` | Replace an existing asset with a new file, keeping its metadata |
 | ✅ done | `client-workflow tag-delete` | Delete tags whose full path matches an include/exclude regex |
+| ✅ done | `client-workflow add-users-to-album-with-pattern` | Share every album whose name matches an include/exclude regex with a user |
 | ✅ done | `client-workflow find-no-thumbhash` | Find assets without a thumbhash (likely corrupt or unprocessed) |
 | ✅ done | `client-workflow repair-assets` | Repair corrupt JPEG (missing EOI marker) and TIFF (invalid zero-count IFD tag) assets and re-import them, keeping metadata |
 | ⏳ planned | `client-workflow reencode-jxl` | Re-encode assets to JPEG XL (`cjxl`), then replace the originals |
@@ -83,6 +84,27 @@ immich-admin client-workflow tag-delete --exclude "immich-go" --dry-run
 Flags: `--include REGEX` (default: match all), `--exclude REGEX`, `--dry-run`, `--yes` (skip the confirmation prompt). Filters are passed as flags only — stray positional arguments are rejected so a typo like `exclude` (instead of `--exclude`) fails loudly instead of matching everything.
 
 > ⚠️ Unlike the asset workflows, tag deletion is **permanent** — the Tags API has no trash. Deleting a parent tag also deletes its child tags server-side. Always run with `--dry-run` first.
+
+### `client-workflow add-users-to-album-with-pattern` (alias `cw`)
+
+Bulk-share albums selected by regex with one user:
+
+1. **Resolve** `--user` to exactly one person — an exact UUID, or a case-insensitive substring match against every user's name/email (`GET /users`); errors out and lists the candidates if the query is ambiguous or matches nobody
+2. **Fetch** all albums (`GET /albums`)
+3. **Filter** by `--include` / `--exclude` regexes, matched against each album's name
+4. **Preview** — print every matched album (ID, name, asset count), flagging any where the user already has access
+5. **Confirm** — either one bulk yes/no prompt for all matched albums, or, with `--interactive`, one yes/no prompt **per album** so you can pick and choose
+6. **Share** the confirmed albums with that user at `--role` (`PUT /albums/{id}/users`); albums where the user already has access are skipped without asking
+
+```sh
+# Share every album whose name contains "Amy" or "Amelia" with Julia, as viewer
+immich-admin client-workflow add-users-to-album-with-pattern --include "Amy|Amelia" --user Julia --dry-run
+
+# Same, but decide album-by-album instead of one bulk yes/no
+immich-admin client-workflow add-users-to-album-with-pattern --include "Amy|Amelia" --user Julia --interactive
+```
+
+Flags: `--include REGEX` (default: match all), `--exclude REGEX`, `--user STRING` (required; UUID or name/email substring), `--role editor|viewer|owner` (default `viewer`), `--interactive`/`-i` (ask once per album instead of one bulk confirmation), `--dry-run`, `--yes` (skip all prompts — bulk or interactive).
 
 ### `client-workflow find-no-thumbhash`
 
@@ -219,6 +241,36 @@ Warning: deletion is PERMANENT (tags have no trash) and deleting a parent tag al
 `--dry-run` only previews the selection. The `{immich-go}` tags are kept because their full path contains `immich-go`; everything else is listed for deletion. Remove `--dry-run` (and add `--yes` to skip the prompt) to actually delete them. See [`client-workflow tag-delete`](#client-workflow-tag-delete-alias-cw) above for all flags.
 
 > Note: `--exclude "immich-go"` is a **regex**, matched as a substring of the full tag path. To match "contains", write the literal text (`immich-go`), not a glob like `*immich-go*`.
+
+### I want to share all albums containing "Amy" or "Amelia" with a specific user
+
+Use `add-users-to-album-with-pattern`: it resolves the user first, then previews every matching album before sharing anything.
+
+```console
+> immich-admin.exe cw add-users-to-album-with-pattern --include "Amy|Amelia" --user Julia --dry-run
+Target user: Julia Roberts <julia@example.com> (2a6e9e0e-7a7a-4b3a-9f2e-5c6b2f5a9d11)
+3 album(s) would be shared with Julia Roberts as viewer:
+  0c1f2b3a-4d5e-6f70-8192-a3b4c5d6e7f8  Amy's Wedding  245 asset(s)
+  1d2e3f40-5a6b-7c8d-9e0f-a1b2c3d4e5f6  Amelia Birthday 2024  88 asset(s)
+  2e3f4051-6b7c-8d9e-0f1a-b2c3d4e5f6a7  Amelia & Amy Road Trip  512 asset(s)  (already shared)
+```
+
+`--dry-run` only previews the selection and resolved user. Remove `--dry-run` (and add `--yes` to skip the confirmation prompt) to actually share. If `--user` matches more than one person (or nobody), the command errors out and lists the candidates so you can narrow it down with an exact email or UUID instead. Albums where the user already has access are skipped automatically. See [`client-workflow add-users-to-album-with-pattern`](#client-workflow-add-users-to-album-with-pattern-alias-cw) above for all flags.
+
+Prefer to decide album-by-album instead of one bulk yes/no? Add `--interactive` (alias `-i`):
+
+```console
+> immich-admin.exe cw add-users-to-album-with-pattern --include "Amy|Amelia" --user Julia --interactive
+Target user: Julia Roberts <julia@example.com> (2a6e9e0e-7a7a-4b3a-9f2e-5c6b2f5a9d11)
+2 album(s) would be shared with Julia Roberts as viewer:
+  0c1f2b3a-4d5e-6f70-8192-a3b4c5d6e7f8  Amy's Wedding  245 asset(s)
+  1d2e3f40-5a6b-7c8d-9e0f-a1b2c3d4e5f6  Amelia Birthday 2024  88 asset(s)
+Share "Amy's Wedding" (245 asset(s)) with Julia Roberts as viewer? [y/N]: y
+Share "Amelia Birthday 2024" (88 asset(s)) with Julia Roberts as viewer? [y/N]: n
+Amy's Wedding: Share album "Amy's Wedding" (0c1f2b3a-...) with Julia Roberts <julia@example.com> as viewer... ok
+```
+
+Each album gets its own yes/no prompt; albums where the user already has access are added automatically without asking (there's nothing to decide). `--yes` always wins over `--interactive` and shares everything without asking.
 
 ### I want to find corrupt images that have no thumbnail (thumbhash)
 
@@ -403,7 +455,7 @@ Or save the IDs to a file for use with bulk commands (`--ids-file`):
 
 <!-- Generated by tools/apitable — do not edit between the markers. Refresh with `go generate ./...` -->
 <!-- API-TABLE:BEGIN -->
-**11 of 235 endpoints implemented** (17 deprecated and 2 internal endpoints omitted per project policy).
+**15 of 235 endpoints implemented** (17 deprecated and 2 internal endpoints omitted per project policy).
 
 <details>
 <summary><b>API keys</b> (0/5)</summary>
@@ -431,11 +483,11 @@ Or save the IDs to a file for use with bulk commands (`--ids-file`):
 </details>
 
 <details>
-<summary><b>Albums</b> (1/13)</summary>
+<summary><b>Albums</b> (3/13)</summary>
 
 | Impl | Method | Path | Operation | State |
 |:----:|--------|------|-----------|-------|
-|  | GET | `/albums` | `getAllAlbums` | Stable |
+| ✅ | GET | `/albums` | `getAllAlbums` | Stable |
 |  | POST | `/albums` | `createAlbum` | Stable |
 |  | PUT | `/albums/assets` | `addAssetsToAlbums` | Stable |
 |  | GET | `/albums/statistics` | `getAlbumStatistics` | Stable |
@@ -447,7 +499,7 @@ Or save the IDs to a file for use with bulk commands (`--ids-file`):
 |  | GET | `/albums/{id}/map-markers` | `getAlbumMapMarkers` | – |
 |  | DELETE | `/albums/{id}/user/{userId}` | `removeUserFromAlbum` | Stable |
 |  | PUT | `/albums/{id}/user/{userId}` | `updateAlbumUser` | Stable |
-|  | PUT | `/albums/{id}/users` | `addUsersToAlbum` | Stable |
+| ✅ | PUT | `/albums/{id}/users` | `addUsersToAlbum` | Stable |
 
 </details>
 
@@ -858,11 +910,11 @@ Or save the IDs to a file for use with bulk commands (`--ids-file`):
 </details>
 
 <details>
-<summary><b>Users</b> (1/14)</summary>
+<summary><b>Users</b> (3/14)</summary>
 
 | Impl | Method | Path | Operation | State |
 |:----:|--------|------|-----------|-------|
-|  | GET | `/users` | `searchUsers` | Stable |
+| ✅ | GET | `/users` | `searchUsers` | Stable |
 | ✅ | GET | `/users/me` | `getMyUser` | Stable |
 |  | GET | `/users/me/calendar-heatmap` | `getMyCalendarHeatmap` | Stable |
 |  | DELETE | `/users/me/license` | `deleteUserLicense` | Stable |
@@ -874,7 +926,7 @@ Or save the IDs to a file for use with bulk commands (`--ids-file`):
 |  | GET | `/users/me/preferences` | `getMyPreferences` | Stable |
 |  | DELETE | `/users/profile-image` | `deleteProfileImage` | Stable |
 |  | POST | `/users/profile-image` | `createProfileImage` | Stable |
-|  | GET | `/users/{id}` | `getUser` | Stable |
+| ✅ | GET | `/users/{id}` | `getUser` | Stable |
 |  | GET | `/users/{id}/profile-image` | `getProfileImage` | Stable |
 
 </details>

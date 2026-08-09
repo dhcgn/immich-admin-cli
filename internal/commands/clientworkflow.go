@@ -15,6 +15,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/dhcgn/immich-admin-cli/internal/client"
+	"github.com/dhcgn/immich-admin-cli/internal/immichapi"
 	"github.com/dhcgn/immich-admin-cli/internal/workflows"
 )
 
@@ -33,6 +34,7 @@ func ClientWorkflow() *cli.Command {
 		Commands: []*cli.Command{
 			replaceAssetCommand(),
 			tagDeleteCommand(),
+			addUsersToAlbumWithPatternCommand(),
 			findNoThumbhashCommand(),
 			repairAssetsCommand(),
 		},
@@ -162,6 +164,160 @@ func compileOptionalRegex(pattern string) (*regexp.Regexp, error) {
 		return nil, nil
 	}
 	return regexp.Compile(pattern)
+}
+
+func addUsersToAlbumWithPatternCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "add-users-to-album-with-pattern",
+		Usage: "Share every album whose name matches an include/exclude regex with a user",
+		Description: "Resolves --user to exactly one person (exact UUID, or a case-insensitive " +
+			"substring match on name/email), fetches all albums, keeps those whose name matches " +
+			"--include and not --exclude, shows the full list, then shares each of them with that " +
+			"user at --role. Albums where the user already has access are skipped.",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "include",
+				Usage: "only share albums whose name matches this `REGEX` (default: match all)",
+			},
+			&cli.StringFlag{
+				Name:  "exclude",
+				Usage: "never share albums whose name matches this `REGEX`",
+			},
+			&cli.StringFlag{
+				Name:     "user",
+				Usage:    "target user: exact user `UUID`, or a case-insensitive substring of their name/email",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:  "role",
+				Usage: "album role to grant: editor, viewer, or owner",
+				Value: string(immichapi.AlbumUserRoleViewer),
+			},
+			&cli.BoolFlag{
+				Name:  "dry-run",
+				Usage: "print the albums that would be shared without changing anything",
+			},
+			&cli.BoolFlag{
+				Name:    "interactive",
+				Aliases: []string{"i"},
+				Usage:   "ask once per album (y/N) instead of one bulk confirmation; --yes overrides this and skips all prompts",
+			},
+			&cli.BoolFlag{
+				Name:  "yes",
+				Usage: "skip the confirmation prompt(s) before sharing albums",
+			},
+		},
+		Action: clientWorkflowAddUsersToAlbumWithPattern,
+	}
+}
+
+func clientWorkflowAddUsersToAlbumWithPattern(ctx context.Context, cmd *cli.Command) error {
+	if cmd.Args().Len() > 0 {
+		return fmt.Errorf("add-users-to-album-with-pattern takes no positional arguments; pass filters as --include/--exclude REGEX flags (got %v)", cmd.Args().Slice())
+	}
+
+	include, err := compileOptionalRegex(cmd.String("include"))
+	if err != nil {
+		return fmt.Errorf("invalid --include: %w", err)
+	}
+	exclude, err := compileOptionalRegex(cmd.String("exclude"))
+	if err != nil {
+		return fmt.Errorf("invalid --exclude: %w", err)
+	}
+
+	role := immichapi.AlbumUserRole(cmd.String("role"))
+	switch role {
+	case immichapi.AlbumUserRoleEditor, immichapi.AlbumUserRoleViewer, immichapi.AlbumUserRoleOwner:
+		// valid
+	default:
+		return fmt.Errorf("invalid --role %q: must be editor, viewer, or owner", role)
+	}
+
+	dryRun := cmd.Bool("dry-run")
+	interactive := cmd.Bool("interactive")
+	yes := cmd.Bool("yes")
+
+	c, err := newClient(ctx, cmd)
+	if err != nil {
+		return err
+	}
+
+	// Resolve the target user first: fail fast on an ambiguous/unknown
+	// query before touching any album.
+	user, err := workflows.ResolveUser(ctx, c, cmd.String("user"))
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Target user: %s <%s> (%s)\n", user.Name, user.Email, user.Id)
+
+	opts := workflows.AddUsersToAlbumOptions{
+		Include: include,
+		Exclude: exclude,
+		Role:    role,
+		DryRun:  dryRun,
+	}
+
+	albums, err := workflows.SelectAlbumsForSharing(ctx, c, opts)
+	if err != nil {
+		return err
+	}
+
+	if len(albums) == 0 {
+		fmt.Println("No albums matched; nothing to share.")
+		return nil
+	}
+
+	fmt.Printf("%d album(s) would be shared with %s as %s:\n", len(albums), user.Name, role)
+	for _, a := range albums {
+		note := ""
+		if _, already := workflows.AlbumHasUser(a, user.Id); already {
+			note = "  (already shared)"
+		}
+		fmt.Printf("  %s  %s  %d asset(s)%s\n", a.Id, a.AlbumName, a.AssetCount, note)
+	}
+
+	// --interactive asks once per album instead of one bulk confirmation;
+	// --yes always wins and skips every prompt (bulk or per-album).
+	if interactive && !yes {
+		albums = selectAlbumsInteractively(os.Stdin, os.Stdout, albums, *user, role)
+		if len(albums) == 0 {
+			fmt.Println("No albums selected; nothing to share.")
+			return nil
+		}
+	} else if !dryRun && !yes {
+		fmt.Printf("Share these %d album(s) with %s? [y/N]: ", len(albums), user.Name)
+		if !confirm(os.Stdin) {
+			fmt.Println("Aborted.")
+			return nil
+		}
+	}
+
+	return workflows.ShareAlbumsWithUser(ctx, c, albums, *user, opts)
+}
+
+// selectAlbumsInteractively asks once per album (via in/out) whether to
+// share it with user, and returns the subset the caller confirmed. Albums
+// where user already has access are kept without asking — they are already
+// no-ops for ShareAlbumsWithUser and skipped there with an info message.
+func selectAlbumsInteractively(in io.Reader, out io.Writer, albums []immichapi.AlbumResponseDto, user immichapi.UserResponseDto, role immichapi.AlbumUserRole) []immichapi.AlbumResponseDto {
+	scanner := bufio.NewScanner(in)
+	var selected []immichapi.AlbumResponseDto
+	for _, a := range albums {
+		if _, already := workflows.AlbumHasUser(a, user.Id); already {
+			selected = append(selected, a)
+			continue
+		}
+
+		fmt.Fprintf(out, "Share %q (%d asset(s)) with %s as %s? [y/N]: ", a.AlbumName, a.AssetCount, user.Name, role)
+		if !scanner.Scan() {
+			break
+		}
+		answer := strings.ToLower(strings.TrimSpace(scanner.Text()))
+		if answer == "y" || answer == "yes" {
+			selected = append(selected, a)
+		}
+	}
+	return selected
 }
 
 func clientWorkflowReplaceAsset(ctx context.Context, cmd *cli.Command) error {
