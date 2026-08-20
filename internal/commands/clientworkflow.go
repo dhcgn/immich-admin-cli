@@ -39,6 +39,7 @@ func ClientWorkflow() *cli.Command {
 			findHEICTileDefectCommand(),
 			repairAssetsCommand(),
 			fixAlbumDatesCommand(),
+			downloadAlbumCommand(),
 		},
 	}
 }
@@ -1167,4 +1168,166 @@ func repairScanNoThumbhash(ctx context.Context, c *client.Client, opts workflows
 		ids = append(ids, id)
 	}
 	return ids, nil
+}
+
+// validateDownloadAlbumAlbumFlags ensures exactly one of --album-id /
+// --album-name was given, extracted as a pure function so it is directly
+// unit-testable without spinning up a full CLI command run.
+func validateDownloadAlbumAlbumFlags(albumIDStr, albumName string) error {
+	if (albumIDStr == "") == (albumName == "") {
+		return fmt.Errorf("exactly one of --album-id or --album-name is required")
+	}
+	return nil
+}
+
+// resolveDownloadAlbumSize validates the --size flag value, restricted to
+// the two media variants download-album supports (unlike download-thumbnail,
+// which exposes the full AssetMediaSize enum).
+func resolveDownloadAlbumSize(raw string) (immichapi.AssetMediaSize, error) {
+	size := immichapi.AssetMediaSize(raw)
+	if size != immichapi.Original && size != immichapi.Thumbnail {
+		return "", fmt.Errorf("invalid --size %q: must be %q or %q", raw, immichapi.Original, immichapi.Thumbnail)
+	}
+	return size, nil
+}
+
+func downloadAlbumCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "download-album",
+		Usage: "Download all original files or all thumbnails from one album into a local folder, optionally kept in sync",
+		Description: "Downloads every asset in exactly one album (--album-id or --album-name) into --target-dir, " +
+			"as either the full original file or its small thumbnail (--size), optionally skipping videos " +
+			"(--ignore-videos). Without --sync this is a plain one-shot bulk download that always overwrites. " +
+			"With --sync, a hidden manifest (.immich-album-sync.json) is kept in --target-dir to detect assets " +
+			"that changed (re-downloaded) or left the album (local file deleted) on later runs; files not " +
+			"tracked in the manifest are never touched.",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "album-id",
+				Usage: "album `ID` to download (mutually exclusive with --album-name)",
+			},
+			&cli.StringFlag{
+				Name:  "album-name",
+				Usage: "album name to download; must resolve to exactly one album (mutually exclusive with --album-id)",
+			},
+			&cli.StringFlag{
+				Name:     "target-dir",
+				Usage:    "local directory to download into (created if missing)",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:  "size",
+				Usage: "media variant to download: original or thumbnail",
+				Value: string(immichapi.Original),
+			},
+			&cli.BoolFlag{
+				Name:  "ignore-videos",
+				Usage: "skip video assets",
+			},
+			&cli.BoolFlag{
+				Name:  "sync",
+				Usage: "keep --target-dir in sync using a manifest: skip unchanged assets, re-download changed ones, and delete local files for assets removed from the album",
+			},
+			&cli.BoolFlag{
+				Name:  "dry-run",
+				Usage: "print the planned downloads/deletions without changing anything",
+			},
+			&cli.BoolFlag{
+				Name:  "yes",
+				Usage: "skip the confirmation prompt before deleting local files (--sync only)",
+			},
+		},
+		Action: clientWorkflowDownloadAlbum,
+	}
+}
+
+func clientWorkflowDownloadAlbum(ctx context.Context, cmd *cli.Command) error {
+	if cmd.Args().Len() > 0 {
+		return fmt.Errorf("download-album takes no positional arguments; pass --album-id/--album-name and --target-dir (got %v)", cmd.Args().Slice())
+	}
+
+	albumIDStr := cmd.String("album-id")
+	albumName := cmd.String("album-name")
+	if err := validateDownloadAlbumAlbumFlags(albumIDStr, albumName); err != nil {
+		return err
+	}
+
+	targetDir := cmd.String("target-dir")
+
+	size, err := resolveDownloadAlbumSize(cmd.String("size"))
+	if err != nil {
+		return err
+	}
+
+	var albumID *openapi_types.UUID
+	if albumIDStr != "" {
+		id, err := uuid.Parse(albumIDStr)
+		if err != nil {
+			return fmt.Errorf("invalid --album-id %q: %w", albumIDStr, err)
+		}
+		uid := openapi_types.UUID(id)
+		albumID = &uid
+	}
+
+	dryRun := cmd.Bool("dry-run")
+	sync := cmd.Bool("sync")
+	yes := cmd.Bool("yes")
+
+	c, err := newClient(ctx, cmd)
+	if err != nil {
+		return err
+	}
+
+	album, err := workflows.ResolveAlbum(ctx, c, albumID, albumName)
+	if err != nil {
+		return err
+	}
+
+	opts := workflows.DownloadAlbumOptions{Size: size, IgnoreVideos: cmd.Bool("ignore-videos"), DryRun: dryRun}
+
+	if !sync {
+		return workflows.DownloadAlbum(ctx, c, album, targetDir, opts)
+	}
+
+	assets, plan, manifest, err := workflows.PlanAlbumSync(ctx, c, album, targetDir, opts)
+	if err != nil {
+		return err
+	}
+
+	printDownloadAlbumSyncPlan(album, plan)
+
+	if len(plan.Additions) == 0 && len(plan.Updates) == 0 && len(plan.Removals) == 0 {
+		fmt.Println("Already up to date.")
+		return nil
+	}
+
+	if dryRun {
+		return nil
+	}
+
+	if len(plan.Removals) > 0 && !yes {
+		fmt.Printf("This will permanently delete %d local file(s) whose asset is no longer in the album. Continue? [y/N]: ", len(plan.Removals))
+		if !confirm(os.Stdin) {
+			fmt.Println("Aborted.")
+			return nil
+		}
+	}
+
+	return workflows.ApplyAlbumSync(ctx, c, album, targetDir, assets, plan, manifest, opts)
+}
+
+// printDownloadAlbumSyncPlan prints a summary of a `download-album --sync`
+// run's planned actions (used for both --dry-run previews and the real run).
+func printDownloadAlbumSyncPlan(album immichapi.AlbumResponseDto, plan workflows.SyncPlan) {
+	fmt.Printf("Album %q (%s): %d to add, %d to update, %d unchanged, %d to remove\n",
+		album.AlbumName, album.Id, len(plan.Additions), len(plan.Updates), len(plan.Unchanged), len(plan.Removals))
+	for _, a := range plan.Additions {
+		fmt.Printf("  + %s (%s)\n", a.OriginalFileName, a.Id)
+	}
+	for _, a := range plan.Updates {
+		fmt.Printf("  ~ %s (%s)\n", a.OriginalFileName, a.Id)
+	}
+	for _, r := range plan.Removals {
+		fmt.Printf("  - %s (%s)\n", r.FileName, r.AssetID)
+	}
 }

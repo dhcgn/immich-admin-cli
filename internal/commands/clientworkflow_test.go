@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -207,5 +208,78 @@ func TestFixableCount(t *testing.T) {
 	}
 	if got := fixableCount(checks); got != 3 {
 		t.Errorf("fixableCount() = %d, want 3 (year-precision mismatches don't count)", got)
+	}
+}
+
+func TestValidateDownloadAlbumAlbumFlags(t *testing.T) {
+	tests := []struct {
+		name      string
+		albumID   string
+		albumName string
+		wantErr   bool
+	}{
+		{name: "only id", albumID: "some-id", wantErr: false},
+		{name: "only name", albumName: "Vacation", wantErr: false},
+		{name: "neither", wantErr: true},
+		{name: "both", albumID: "some-id", albumName: "Vacation", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateDownloadAlbumAlbumFlags(tc.albumID, tc.albumName)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("validateDownloadAlbumAlbumFlags(%q, %q) error = %v, wantErr %v", tc.albumID, tc.albumName, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestResolveDownloadAlbumSize(t *testing.T) {
+	tests := []struct {
+		raw     string
+		want    immichapi.AssetMediaSize
+		wantErr bool
+	}{
+		{raw: "original", want: immichapi.Original},
+		{raw: "thumbnail", want: immichapi.Thumbnail},
+		{raw: "preview", wantErr: true},
+		{raw: "fullsize", wantErr: true},
+		{raw: "", wantErr: true},
+		{raw: "bogus", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.raw, func(t *testing.T) {
+			got, err := resolveDownloadAlbumSize(tc.raw)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("resolveDownloadAlbumSize(%q) error = %v, wantErr %v", tc.raw, err, tc.wantErr)
+			}
+			if err == nil && got != tc.want {
+				t.Errorf("resolveDownloadAlbumSize(%q) = %q, want %q", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPrintDownloadAlbumSyncPlan(t *testing.T) {
+	album := testAlbum("Vacation")
+	plan := workflows.SyncPlan{
+		Additions: []immichapi.AssetResponseDto{{Id: openapi_types.UUID(uuid.New()), OriginalFileName: "new.jpg"}},
+		Updates:   []immichapi.AssetResponseDto{{Id: openapi_types.UUID(uuid.New()), OriginalFileName: "changed.jpg"}},
+		Removals:  []workflows.ManifestRemoval{{AssetID: "gone-id", FileName: "gone.jpg"}},
+	}
+
+	var buf bytes.Buffer
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	printDownloadAlbumSyncPlan(album, plan)
+	w.Close()
+	os.Stdout = oldStdout
+	buf.ReadFrom(r)
+	out := buf.String()
+
+	for _, want := range []string{"1 to add", "1 to update", "1 to remove", "new.jpg", "changed.jpg", "gone.jpg"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("printDownloadAlbumSyncPlan() output missing %q, got: %q", want, out)
+		}
 	}
 }

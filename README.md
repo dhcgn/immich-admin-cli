@@ -42,6 +42,7 @@ All workflows follow the same safety model: `--dry-run` shows what would happen 
 | ✅ done | `client-workflow find-no-thumbhash` | Find assets without a thumbhash (likely corrupt or unprocessed) |
 | ✅ done | `client-workflow repair-assets` | Repair corrupt JPEG (missing EOI marker) and TIFF (invalid zero-count IFD tag) assets and re-import them, keeping metadata |
 | ✅ done | `client-workflow fix-album-dates` | Check assets in date-named albums ("2025-07-04 Garten", "2010 USA") against the date implied by the album name, and offer to fix mismatches |
+| ✅ done | `client-workflow download-album` | Download all originals or all thumbnails from one album to a local folder, optionally excluding videos, optionally kept in sync |
 | ⏳ planned | `client-workflow reencode-jxl` | Re-encode assets to JPEG XL (`cjxl`), then replace the originals |
 | ⏳ planned | `client-workflow reencode-jpegli` | Re-encode assets with jpegli (`cjpegli`), then replace the originals |
 
@@ -249,6 +250,41 @@ Flags: `--dry-run`, `--offset-days N` (default `2`; allow assets up to N days be
 > ⚠️ Without `--interactive`, confirming prints an explicit warning that it will change every listed asset automatically, with no per-album review (e.g. "This changes 1293 asset(s) automatically, without reviewing each one individually").
 
 > ⚠️ **This is the one deliberate exception to this project's rule against deprecated endpoints.** Fixing a date calls `PUT /assets/{id}` (`updateAsset`), the only Immich API that can set an asset's capture date — it is marked deprecated upstream with a self-referential (i.e. non-existent) `replacementId`, so no working replacement exists. See `.github/copilot-instructions.md` for the exact scope of this exception.
+
+### `client-workflow download-album`
+
+Mirrors exactly one album into a local folder — the full originals, or just the small thumbnails when file size matters (e.g. copying a huge album to a phone or a size-limited drive):
+
+1. **Resolve** the album from `--album-id` or `--album-name` (`GET /albums`/`GET /albums/{id}`) — a name must resolve to exactly one album, or the command lists every match and asks you to use `--album-id` instead
+2. **Fetch** the album's assets (`POST /search/metadata`, filtered by album), optionally dropping videos (`--ignore-videos`)
+3. **Download** each asset as either the full original (`GET /assets/{id}/original`) or its thumbnail (`GET /assets/{id}/thumbnail`, `--size thumbnail`) into `--target-dir`, named after the asset's own original file name (duplicate names within an album get a short, deterministic asset-ID suffix)
+
+Without `--sync` this is a simple one-shot bulk download: every matching asset is (re-)downloaded, always overwriting whatever is already there.
+
+With `--sync`, a hidden manifest (`.immich-album-sync.json`) is kept in `--target-dir` so repeated runs behave like a proper mirror instead of a blind re-download:
+
+- assets not yet in the manifest are downloaded (**add**)
+- assets whose checksum changed since the last sync are re-downloaded (**update**)
+- assets whose checksum is unchanged are skipped (**unchanged**)
+- manifest entries whose asset is no longer in the (filtered) album have their local file **deleted**
+
+Only files this tool itself downloaded (tracked in the manifest) are ever touched or deleted — anything else you put in the target folder is left alone. Change detection compares the *original* asset's checksum even in `--size thumbnail` mode (Immich exposes no separate thumbnail checksum, and a thumbnail is derived deterministically from the original), so a metadata-only edit that doesn't change the original file's bytes (e.g. a pure EXIF rotation) won't trigger a thumbnail re-download. The manifest also records which album and `--size` it was built for; pointing `--sync` at a folder whose manifest names a different album, or was built with a different `--size`, is refused rather than risk deleting unrelated files — use a fresh `--target-dir` to switch.
+
+```sh
+# One-shot download of every original in an album
+immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten
+
+# Thumbnails only (smaller footprint), skipping videos
+immich-admin cw download-album --album-id d4856b75-7700-414c-9dc2-4f6d501936d1 --target-dir ./garten-thumbs --size thumbnail --ignore-videos
+
+# Keep a folder mirrored to the album going forward
+immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten --sync --dry-run
+immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten --sync --yes
+```
+
+Flags: exactly one of `--album-id UUID` / `--album-name NAME`, `--target-dir DIR` (required), `--size original|thumbnail` (default `original`), `--ignore-videos`, `--sync`, `--dry-run`, `--yes` (skip the confirmation prompt before `--sync` deletes local files).
+
+The underlying operations are also available standalone: `assets download-original` and the new `assets download-thumbnail` (`GET /assets/{id}/thumbnail`, supporting the full `original|fullsize|preview|thumbnail` `AssetMediaSize` range plus `--edited`).
 
 ## Sample Use Cases
 
@@ -508,11 +544,23 @@ Or save the IDs to a file for use with bulk commands (`--ids-file`):
 > immich-admin.exe search metadata --city Berlin --taken-after 2024-01-01T00:00:00Z --taken-before 2024-12-31T23:59:59Z
 ```
 
+### I want to keep a local folder mirrored to an album, using small thumbnails to save space
+
+```console
+> immich-admin.exe cw download-album --album-name "2025-07-04 Garten" --target-dir D:\Photos\Garten --size thumbnail --ignore-videos --sync --dry-run
+Album "2025-07-04 Garten" (d4856b75-7700-414c-9dc2-4f6d501936d1): 245 to add, 0 to update, 0 unchanged, 0 to remove
+  + IMG_1234.jpg (a1b2c3d4-...)
+  ...
+> immich-admin.exe cw download-album --album-name "2025-07-04 Garten" --target-dir D:\Photos\Garten --size thumbnail --ignore-videos --sync --yes
+```
+
+Re-running the same command later only downloads what changed and removes local files for photos taken out of the album — everything else is left untouched. See [`client-workflow download-album`](#client-workflow-download-album) above for all flags and the manifest/safety model.
+
 ## API Coverage
 
 <!-- Generated by tools/apitable — do not edit between the markers. Refresh with `go generate ./...` -->
 <!-- API-TABLE:BEGIN -->
-**18 of 235 endpoints implemented** (17 deprecated and 2 internal endpoints omitted per project policy).
+**19 of 235 endpoints implemented** (17 deprecated and 2 internal endpoints omitted per project policy).
 
 <details>
 <summary><b>API keys</b> (0/5)</summary>
@@ -561,7 +609,7 @@ Or save the IDs to a file for use with bulk commands (`--ids-file`):
 </details>
 
 <details>
-<summary><b>Assets</b> (5/24)</summary>
+<summary><b>Assets</b> (6/24)</summary>
 
 | Impl | Method | Path | Operation | State |
 |:----:|--------|------|-----------|-------|
@@ -583,7 +631,7 @@ Or save the IDs to a file for use with bulk commands (`--ids-file`):
 |  | GET | `/assets/{id}/metadata/{key}` | `getAssetMetadataByKey` | Stable |
 |  | GET | `/assets/{id}/ocr` | `getAssetOcr` | Stable |
 | ✅ | GET | `/assets/{id}/original` | `downloadAsset` | Stable |
-|  | GET | `/assets/{id}/thumbnail` | `viewAsset` | Stable |
+| ✅ | GET | `/assets/{id}/thumbnail` | `viewAsset` | Stable |
 |  | GET | `/assets/{id}/video/playback` | `playAssetVideo` | Stable |
 |  | GET | `/assets/{id}/video/stream/main.m3u8` | `getMainPlaylist` | Alpha |
 |  | DELETE | `/assets/{id}/video/stream/{sessionId}` | `endSession` | Alpha |
