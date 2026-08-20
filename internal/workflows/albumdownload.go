@@ -384,13 +384,34 @@ func fetchAssetStream(ctx context.Context, c *client.Client, a immichapi.AssetRe
 	}
 }
 
+// shouldResize reports whether downloadAssetFile should run ImageMagick
+// against this asset's downloaded stream. GET /assets/{id}/thumbnail always
+// returns a static preview image regardless of the asset's own Type (Immich
+// generates an image thumbnail even for videos), so thumbnail-size resize
+// is always safe when enabled. GET /assets/{id}/original returns the
+// asset's real file, though — running ImageMagick against a video (or
+// audio/other) original would treat it as a sequence of frames and either
+// fail or silently produce one JPEG per frame, so original-size resize is
+// restricted to Type == IMAGE. Pure (no network) so this decision is
+// directly unit-testable.
+func shouldResize(resize ResizeOptions, size immichapi.AssetMediaSize, assetType immichapi.AssetTypeEnum) bool {
+	if !resize.Enabled {
+		return false
+	}
+	if size == immichapi.Thumbnail {
+		return true
+	}
+	return assetType == immichapi.IMAGE
+}
+
 // downloadAssetFile downloads one asset (original or thumbnail, per size)
 // to destBasePath + <extension>, and returns the full destination path
-// used. If resize.Enabled, the downloaded file is first saved to a
-// temporary path, then re-encoded to destBasePath+".jpg" via
-// RunImageMagickResize, and the temporary file is removed — so the returned
-// path is always "destBasePath.jpg" in that case, regardless of the
-// original/thumbnail's natural format.
+// used. If shouldResize(resize, size, a.Type) is true, the downloaded file
+// is first saved to a temporary path, then re-encoded to
+// destBasePath+".jpg" via RunImageMagickResize, and the temporary file is
+// removed — so the returned path is "destBasePath.jpg" in that case.
+// Otherwise (resize disabled, or a non-image asset downloaded as
+// --size original) the file is saved as-is in its natural format.
 func downloadAssetFile(ctx context.Context, c *client.Client, a immichapi.AssetResponseDto, size immichapi.AssetMediaSize, destBasePath string, resize ResizeOptions) (string, error) {
 	body, ext, err := fetchAssetStream(ctx, c, a, size)
 	if err != nil {
@@ -398,8 +419,10 @@ func downloadAssetFile(ctx context.Context, c *client.Client, a immichapi.AssetR
 	}
 	defer body.Close()
 
+	resizeThis := shouldResize(resize, size, a.Type)
+
 	rawPath := destBasePath + ext
-	if resize.Enabled {
+	if resizeThis {
 		// Download to a distinct temporary path so a same-extension source
 		// (e.g. an original that's already .jpg) never collides with the
 		// final resized output path.
@@ -409,7 +432,7 @@ func downloadAssetFile(ctx context.Context, c *client.Client, a immichapi.AssetR
 		return "", err
 	}
 
-	if !resize.Enabled {
+	if !resizeThis {
 		return rawPath, nil
 	}
 

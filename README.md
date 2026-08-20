@@ -275,6 +275,8 @@ Only files this tool itself downloaded (tracked in the manifest) are ever touche
 
 **`--resize`** re-encodes every downloaded file to JPEG using [ImageMagick](https://imagemagick.org/), regardless of the source format (useful when local disk/transfer size matters more than preserving the exact original format — see `--size thumbnail` for an even smaller alternative). It requires the `magick` (v7+) or `convert` (legacy v6) executable, resolved in this order: `tools.imagemagick_path` in the config file, the `IMMICH_IMAGEMAGICK_PATH` environment variable, then a `PATH` lookup — checked once before any download starts, so a missing tool fails fast. `--resize-width`/`--resize-height` (pixels, either or both; 0 means unconstrained on that axis — ImageMagick fits the image within the box, preserving aspect ratio) control the target size, and `--resize-quality` (1-100, default 85) controls JPEG quality; omitting both width and height just re-encodes/re-compresses without changing dimensions.
 
+> ⚠️ **`--resize` only ever runs against actual image content**, never a video's real file: with `--size original`, non-`IMAGE` assets (videos, audio, anything else) are saved as-is, untouched, because running ImageMagick against a video file treats it as a sequence of frames and would either fail or silently produce one JPEG per frame. With `--size thumbnail`, resize always applies — the thumbnail endpoint always returns a static preview image, even for a video asset. Combine `--resize` with `--ignore-videos` if you want every downloaded file to actually be resized.
+
 ```sh
 # One-shot download of every original in an album
 immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten

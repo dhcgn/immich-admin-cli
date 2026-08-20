@@ -277,6 +277,35 @@ func TestResolveImageMagickPath(t *testing.T) {
 	}
 }
 
+func TestShouldResize(t *testing.T) {
+	enabled := ResizeOptions{Enabled: true}
+	disabled := ResizeOptions{Enabled: false}
+
+	tests := []struct {
+		name      string
+		resize    ResizeOptions
+		size      immichapi.AssetMediaSize
+		assetType immichapi.AssetTypeEnum
+		want      bool
+	}{
+		{name: "disabled, original, image", resize: disabled, size: immichapi.Original, assetType: immichapi.IMAGE, want: false},
+		{name: "enabled, original, image", resize: enabled, size: immichapi.Original, assetType: immichapi.IMAGE, want: true},
+		{name: "enabled, original, video: never resize the real video file", resize: enabled, size: immichapi.Original, assetType: immichapi.VIDEO, want: false},
+		{name: "enabled, original, audio", resize: enabled, size: immichapi.Original, assetType: immichapi.AUDIO, want: false},
+		{name: "enabled, original, other", resize: enabled, size: immichapi.Original, assetType: immichapi.OTHER, want: false},
+		{name: "enabled, thumbnail, video: thumbnail is always a static image", resize: enabled, size: immichapi.Thumbnail, assetType: immichapi.VIDEO, want: true},
+		{name: "enabled, thumbnail, image", resize: enabled, size: immichapi.Thumbnail, assetType: immichapi.IMAGE, want: true},
+		{name: "disabled, thumbnail, image", resize: disabled, size: immichapi.Thumbnail, assetType: immichapi.IMAGE, want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldResize(tc.resize, tc.size, tc.assetType); got != tc.want {
+				t.Errorf("shouldResize(%+v, %q, %q) = %t, want %t", tc.resize, tc.size, tc.assetType, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestPlanAlbumSyncRefusesMismatchedManifest(t *testing.T) {
 	album := immichapi.AlbumResponseDto{Id: openapi_types.UUID(uuid.New()), AlbumName: "Vacation"}
 
