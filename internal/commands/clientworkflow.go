@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -15,6 +16,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/dhcgn/immich-admin-cli/internal/client"
+	"github.com/dhcgn/immich-admin-cli/internal/config"
 	"github.com/dhcgn/immich-admin-cli/internal/immichapi"
 	"github.com/dhcgn/immich-admin-cli/internal/workflows"
 )
@@ -39,6 +41,7 @@ func ClientWorkflow() *cli.Command {
 			findHEICTileDefectCommand(),
 			repairAssetsCommand(),
 			fixAlbumDatesCommand(),
+			downloadAlbumCommand(),
 		},
 	}
 }
@@ -1167,4 +1170,278 @@ func repairScanNoThumbhash(ctx context.Context, c *client.Client, opts workflows
 		ids = append(ids, id)
 	}
 	return ids, nil
+}
+
+// validateDownloadAlbumAlbumFlags ensures exactly one of --album-id /
+// --album-name was given, extracted as a pure function so it is directly
+// unit-testable without spinning up a full CLI command run.
+func validateDownloadAlbumAlbumFlags(albumIDStr, albumName string) error {
+	if (albumIDStr == "") == (albumName == "") {
+		return fmt.Errorf("exactly one of --album-id or --album-name is required")
+	}
+	return nil
+}
+
+// resolveDownloadAlbumSize validates the --size flag value, restricted to
+// the two media variants download-album supports (unlike download-thumbnail,
+// which exposes the full AssetMediaSize enum).
+func resolveDownloadAlbumSize(raw string) (immichapi.AssetMediaSize, error) {
+	size := immichapi.AssetMediaSize(raw)
+	if size != immichapi.Original && size != immichapi.Thumbnail {
+		return "", fmt.Errorf("invalid --size %q: must be %q or %q", raw, immichapi.Original, immichapi.Thumbnail)
+	}
+	return size, nil
+}
+
+func downloadAlbumCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "download-album",
+		Usage: "Download all original files or all thumbnails from one album into a local folder, optionally kept in sync",
+		Description: "Downloads every asset in exactly one album (--album-id or --album-name) into --target-dir, " +
+			"as either the full original file or its small thumbnail (--size), optionally skipping videos " +
+			"(--ignore-videos). Without --sync this is a plain one-shot bulk download that always overwrites. " +
+			"With --sync, a hidden manifest (.immich-album-sync.json) is kept in --target-dir to detect assets " +
+			"that changed (re-downloaded) or left the album (local file deleted) on later runs; files not " +
+			"tracked in the manifest are never touched. --timestamp-prefix prefixes each file name with the " +
+			"asset's capture date/time for chronological sorting. --resize re-encodes every downloaded IMAGE " +
+			"file to JPEG via ImageMagick, optionally resized (--resize-width/--resize-height) and at a given " +
+			"quality (--resize-quality). --resize-video-preset re-encodes every downloaded VIDEO original via " +
+			"ffmpeg using a named preset.",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "album-id",
+				Usage: "album `ID` to download (mutually exclusive with --album-name)",
+			},
+			&cli.StringFlag{
+				Name:  "album-name",
+				Usage: "album name to download; must resolve to exactly one album (mutually exclusive with --album-id)",
+			},
+			&cli.StringFlag{
+				Name:     "target-dir",
+				Usage:    "local directory to download into (created if missing)",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:  "size",
+				Usage: "media variant to download: original or thumbnail",
+				Value: string(immichapi.Original),
+			},
+			&cli.BoolFlag{
+				Name:  "ignore-videos",
+				Usage: "skip video assets",
+			},
+			&cli.BoolFlag{
+				Name:  "sync",
+				Usage: "keep --target-dir in sync using a manifest: skip unchanged assets, re-download changed ones, and delete local files for assets removed from the album",
+			},
+			&cli.BoolFlag{
+				Name:  "timestamp-prefix",
+				Usage: "prefix each local file name with the asset's capture date/time (\"yyyy-MM-dd_HH_mm_ss\", from its metadata)",
+			},
+			&cli.BoolFlag{
+				Name:  "resize",
+				Usage: "resize/re-encode every downloaded file to JPEG using ImageMagick (path from config tools.imagemagick_path or IMMICH_IMAGEMAGICK_PATH, falling back to PATH)",
+			},
+			&cli.IntFlag{
+				Name:  "resize-width",
+				Usage: "target width in pixels; 0 = unconstrained on that axis (requires --resize)",
+			},
+			&cli.IntFlag{
+				Name:  "resize-height",
+				Usage: "target height in pixels; 0 = unconstrained on that axis (requires --resize)",
+			},
+			&cli.IntFlag{
+				Name:  "resize-quality",
+				Usage: "JPEG quality 1-100 (requires --resize)",
+				Value: workflows.DefaultResizeQuality,
+			},
+			&cli.StringFlag{
+				Name:  "resize-video-preset",
+				Usage: fmt.Sprintf("re-encode every downloaded VIDEO original using ffmpeg (path from config tools.ffmpeg_path or IMMICH_FFMPEG_PATH, falling back to PATH); valid presets: %s", strings.Join(workflows.ValidResizeVideoPresets, ", ")),
+			},
+			&cli.BoolFlag{
+				Name:  "dry-run",
+				Usage: "print the planned downloads/deletions without changing anything",
+			},
+			&cli.BoolFlag{
+				Name:  "yes",
+				Usage: "skip the confirmation prompt before deleting local files (--sync only)",
+			},
+		},
+		Action: clientWorkflowDownloadAlbum,
+	}
+}
+
+// validateResizeVideoPreset checks --resize-video-preset against
+// workflows.ValidResizeVideoPresets without touching the filesystem or
+// environment (resolving ffmpeg is a separate, later step), so it's
+// directly unit-testable. An empty raw value means the feature is disabled
+// (valid).
+func validateResizeVideoPreset(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	if slices.Contains(workflows.ValidResizeVideoPresets, raw) {
+		return nil
+	}
+	return fmt.Errorf("invalid --resize-video-preset %q: valid presets: %s", raw, strings.Join(workflows.ValidResizeVideoPresets, ", "))
+}
+
+// validateResizeFlags checks --resize-width/--resize-height/--resize-quality
+// without touching the filesystem or environment (resolving the ImageMagick
+// executable is a separate, later step), so it's directly unit-testable.
+func validateResizeFlags(enabled bool, widthSet, heightSet, qualitySet bool, width, height, quality int) error {
+	if !enabled {
+		if widthSet || heightSet || qualitySet {
+			return fmt.Errorf("--resize-width/--resize-height/--resize-quality require --resize")
+		}
+		return nil
+	}
+	if width < 0 || height < 0 {
+		return fmt.Errorf("--resize-width/--resize-height must not be negative")
+	}
+	if quality < 1 || quality > 100 {
+		return fmt.Errorf("invalid --resize-quality %d: must be between 1 and 100", quality)
+	}
+	return nil
+}
+
+func clientWorkflowDownloadAlbum(ctx context.Context, cmd *cli.Command) error {
+	if cmd.Args().Len() > 0 {
+		return fmt.Errorf("download-album takes no positional arguments; pass --album-id/--album-name and --target-dir (got %v)", cmd.Args().Slice())
+	}
+
+	albumIDStr := cmd.String("album-id")
+	albumName := cmd.String("album-name")
+	if err := validateDownloadAlbumAlbumFlags(albumIDStr, albumName); err != nil {
+		return err
+	}
+
+	targetDir := cmd.String("target-dir")
+
+	size, err := resolveDownloadAlbumSize(cmd.String("size"))
+	if err != nil {
+		return err
+	}
+
+	resizeEnabled := cmd.Bool("resize")
+	resizeWidth := int(cmd.Int("resize-width"))
+	resizeHeight := int(cmd.Int("resize-height"))
+	resizeQuality := int(cmd.Int("resize-quality"))
+	if err := validateResizeFlags(resizeEnabled, cmd.IsSet("resize-width"), cmd.IsSet("resize-height"), cmd.IsSet("resize-quality"), resizeWidth, resizeHeight, resizeQuality); err != nil {
+		return err
+	}
+
+	resizeOpts := workflows.ResizeOptions{Enabled: resizeEnabled, Width: resizeWidth, Height: resizeHeight, Quality: resizeQuality}
+	if resizeEnabled {
+		// Resolved once, before any download starts (fail fast), per the
+		// project's convention for external local-processing tools.
+		cfg, err := config.Load(cmd.String("config"))
+		if err != nil {
+			return err
+		}
+		execPath, err := workflows.ResolveImageMagickPath(cfg.Tools.ImageMagickPath)
+		if err != nil {
+			return err
+		}
+		resizeOpts.ExecutablePath = execPath
+	}
+
+	resizeVideoPreset := cmd.String("resize-video-preset")
+	if err := validateResizeVideoPreset(resizeVideoPreset); err != nil {
+		return err
+	}
+	resizeVideoOpts := workflows.ResizeVideoOptions{Enabled: resizeVideoPreset != "", Preset: resizeVideoPreset}
+	if resizeVideoOpts.Enabled {
+		// Resolved once, before any download starts (fail fast), same as
+		// ImageMagick above.
+		cfg, err := config.Load(cmd.String("config"))
+		if err != nil {
+			return err
+		}
+		execPath, err := workflows.ResolveFFmpegPath(cfg.Tools.FFmpegPath)
+		if err != nil {
+			return err
+		}
+		resizeVideoOpts.ExecutablePath = execPath
+	}
+
+	var albumID *openapi_types.UUID
+	if albumIDStr != "" {
+		id, err := uuid.Parse(albumIDStr)
+		if err != nil {
+			return fmt.Errorf("invalid --album-id %q: %w", albumIDStr, err)
+		}
+		uid := openapi_types.UUID(id)
+		albumID = &uid
+	}
+
+	dryRun := cmd.Bool("dry-run")
+	sync := cmd.Bool("sync")
+	yes := cmd.Bool("yes")
+
+	c, err := newClient(ctx, cmd)
+	if err != nil {
+		return err
+	}
+
+	album, err := workflows.ResolveAlbum(ctx, c, albumID, albumName)
+	if err != nil {
+		return err
+	}
+
+	opts := workflows.DownloadAlbumOptions{
+		Size:            size,
+		IgnoreVideos:    cmd.Bool("ignore-videos"),
+		DryRun:          dryRun,
+		Resize:          resizeOpts,
+		ResizeVideo:     resizeVideoOpts,
+		TimestampPrefix: cmd.Bool("timestamp-prefix"),
+	}
+
+	if !sync {
+		return workflows.DownloadAlbum(ctx, c, album, targetDir, opts)
+	}
+
+	assets, plan, manifest, err := workflows.PlanAlbumSync(ctx, c, album, targetDir, opts)
+	if err != nil {
+		return err
+	}
+
+	printDownloadAlbumSyncPlan(album, plan)
+
+	if len(plan.Additions) == 0 && len(plan.Updates) == 0 && len(plan.Removals) == 0 {
+		fmt.Println("Already up to date.")
+		return nil
+	}
+
+	if dryRun {
+		return nil
+	}
+
+	if len(plan.Removals) > 0 && !yes {
+		fmt.Printf("This will permanently delete %d local file(s) whose asset is no longer in the album. Continue? [y/N]: ", len(plan.Removals))
+		if !confirm(os.Stdin) {
+			fmt.Println("Aborted.")
+			return nil
+		}
+	}
+
+	return workflows.ApplyAlbumSync(ctx, c, album, targetDir, assets, plan, manifest, opts)
+}
+
+// printDownloadAlbumSyncPlan prints a summary of a `download-album --sync`
+// run's planned actions (used for both --dry-run previews and the real run).
+func printDownloadAlbumSyncPlan(album immichapi.AlbumResponseDto, plan workflows.SyncPlan) {
+	fmt.Printf("Album %q (%s): %d to add, %d to update, %d unchanged, %d to remove\n",
+		album.AlbumName, album.Id, len(plan.Additions), len(plan.Updates), len(plan.Unchanged), len(plan.Removals))
+	for _, a := range plan.Additions {
+		fmt.Printf("  + %s (%s)\n", a.OriginalFileName, a.Id)
+	}
+	for _, a := range plan.Updates {
+		fmt.Printf("  ~ %s (%s)\n", a.OriginalFileName, a.Id)
+	}
+	for _, r := range plan.Removals {
+		fmt.Printf("  - %s (%s)\n", r.FileName, r.AssetID)
+	}
 }
