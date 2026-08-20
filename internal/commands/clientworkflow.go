@@ -15,6 +15,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/dhcgn/immich-admin-cli/internal/client"
+	"github.com/dhcgn/immich-admin-cli/internal/config"
 	"github.com/dhcgn/immich-admin-cli/internal/immichapi"
 	"github.com/dhcgn/immich-admin-cli/internal/workflows"
 )
@@ -1200,7 +1201,10 @@ func downloadAlbumCommand() *cli.Command {
 			"(--ignore-videos). Without --sync this is a plain one-shot bulk download that always overwrites. " +
 			"With --sync, a hidden manifest (.immich-album-sync.json) is kept in --target-dir to detect assets " +
 			"that changed (re-downloaded) or left the album (local file deleted) on later runs; files not " +
-			"tracked in the manifest are never touched.",
+			"tracked in the manifest are never touched. --timestamp-prefix prefixes each file name with the " +
+			"asset's capture date/time for chronological sorting. --resize re-encodes every downloaded file to " +
+			"JPEG via ImageMagick, optionally resized (--resize-width/--resize-height) and at a given quality " +
+			"(--resize-quality).",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:  "album-id",
@@ -1229,6 +1233,27 @@ func downloadAlbumCommand() *cli.Command {
 				Usage: "keep --target-dir in sync using a manifest: skip unchanged assets, re-download changed ones, and delete local files for assets removed from the album",
 			},
 			&cli.BoolFlag{
+				Name:  "timestamp-prefix",
+				Usage: "prefix each local file name with the asset's capture date/time (\"yyyy-MM-dd_HH_mm_ss\", from its metadata)",
+			},
+			&cli.BoolFlag{
+				Name:  "resize",
+				Usage: "resize/re-encode every downloaded file to JPEG using ImageMagick (path from config tools.imagemagick_path or IMMICH_IMAGEMAGICK_PATH, falling back to PATH)",
+			},
+			&cli.IntFlag{
+				Name:  "resize-width",
+				Usage: "target width in pixels; 0 = unconstrained on that axis (requires --resize)",
+			},
+			&cli.IntFlag{
+				Name:  "resize-height",
+				Usage: "target height in pixels; 0 = unconstrained on that axis (requires --resize)",
+			},
+			&cli.IntFlag{
+				Name:  "resize-quality",
+				Usage: "JPEG quality 1-100 (requires --resize)",
+				Value: workflows.DefaultResizeQuality,
+			},
+			&cli.BoolFlag{
 				Name:  "dry-run",
 				Usage: "print the planned downloads/deletions without changing anything",
 			},
@@ -1239,6 +1264,25 @@ func downloadAlbumCommand() *cli.Command {
 		},
 		Action: clientWorkflowDownloadAlbum,
 	}
+}
+
+// validateResizeFlags checks --resize-width/--resize-height/--resize-quality
+// without touching the filesystem or environment (resolving the ImageMagick
+// executable is a separate, later step), so it's directly unit-testable.
+func validateResizeFlags(enabled bool, widthSet, heightSet, qualitySet bool, width, height, quality int) error {
+	if !enabled {
+		if widthSet || heightSet || qualitySet {
+			return fmt.Errorf("--resize-width/--resize-height/--resize-quality require --resize")
+		}
+		return nil
+	}
+	if width < 0 || height < 0 {
+		return fmt.Errorf("--resize-width/--resize-height must not be negative")
+	}
+	if quality < 1 || quality > 100 {
+		return fmt.Errorf("invalid --resize-quality %d: must be between 1 and 100", quality)
+	}
+	return nil
 }
 
 func clientWorkflowDownloadAlbum(ctx context.Context, cmd *cli.Command) error {
@@ -1257,6 +1301,29 @@ func clientWorkflowDownloadAlbum(ctx context.Context, cmd *cli.Command) error {
 	size, err := resolveDownloadAlbumSize(cmd.String("size"))
 	if err != nil {
 		return err
+	}
+
+	resizeEnabled := cmd.Bool("resize")
+	resizeWidth := int(cmd.Int("resize-width"))
+	resizeHeight := int(cmd.Int("resize-height"))
+	resizeQuality := int(cmd.Int("resize-quality"))
+	if err := validateResizeFlags(resizeEnabled, cmd.IsSet("resize-width"), cmd.IsSet("resize-height"), cmd.IsSet("resize-quality"), resizeWidth, resizeHeight, resizeQuality); err != nil {
+		return err
+	}
+
+	resizeOpts := workflows.ResizeOptions{Enabled: resizeEnabled, Width: resizeWidth, Height: resizeHeight, Quality: resizeQuality}
+	if resizeEnabled {
+		// Resolved once, before any download starts (fail fast), per the
+		// project's convention for external local-processing tools.
+		cfg, err := config.Load(cmd.String("config"))
+		if err != nil {
+			return err
+		}
+		execPath, err := workflows.ResolveImageMagickPath(cfg.Tools.ImageMagickPath)
+		if err != nil {
+			return err
+		}
+		resizeOpts.ExecutablePath = execPath
 	}
 
 	var albumID *openapi_types.UUID
@@ -1283,7 +1350,13 @@ func clientWorkflowDownloadAlbum(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	opts := workflows.DownloadAlbumOptions{Size: size, IgnoreVideos: cmd.Bool("ignore-videos"), DryRun: dryRun}
+	opts := workflows.DownloadAlbumOptions{
+		Size:            size,
+		IgnoreVideos:    cmd.Bool("ignore-videos"),
+		DryRun:          dryRun,
+		Resize:          resizeOpts,
+		TimestampPrefix: cmd.Bool("timestamp-prefix"),
+	}
 
 	if !sync {
 		return workflows.DownloadAlbum(ctx, c, album, targetDir, opts)

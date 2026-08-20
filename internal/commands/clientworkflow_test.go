@@ -259,6 +259,36 @@ func TestResolveDownloadAlbumSize(t *testing.T) {
 	}
 }
 
+func TestValidateResizeFlags(t *testing.T) {
+	tests := []struct {
+		name                            string
+		enabled                         bool
+		widthSet, heightSet, qualitySet bool
+		width, height, quality          int
+		wantErr                         bool
+	}{
+		{name: "disabled, nothing set", enabled: false, wantErr: false},
+		{name: "disabled, width set", enabled: false, widthSet: true, width: 800, wantErr: true},
+		{name: "disabled, height set", enabled: false, heightSet: true, height: 600, wantErr: true},
+		{name: "disabled, quality set", enabled: false, qualitySet: true, quality: 70, wantErr: true},
+		{name: "enabled, defaults", enabled: true, quality: 85, wantErr: false},
+		{name: "enabled, width and height", enabled: true, width: 800, height: 600, quality: 85, wantErr: false},
+		{name: "enabled, negative width", enabled: true, width: -1, quality: 85, wantErr: true},
+		{name: "enabled, negative height", enabled: true, height: -1, quality: 85, wantErr: true},
+		{name: "enabled, quality too low", enabled: true, quality: 0, wantErr: true},
+		{name: "enabled, quality too high", enabled: true, quality: 101, wantErr: true},
+		{name: "enabled, quality at bounds", enabled: true, quality: 1, wantErr: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateResizeFlags(tc.enabled, tc.widthSet, tc.heightSet, tc.qualitySet, tc.width, tc.height, tc.quality)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("validateResizeFlags(%+v) error = %v, wantErr %v", tc, err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestPrintDownloadAlbumSyncPlan(t *testing.T) {
 	album := testAlbum("Vacation")
 	plan := workflows.SyncPlan{

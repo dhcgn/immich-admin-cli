@@ -3,3 +3,14 @@
 # Server origin only (no /api suffix — the client appends it).
 server: https://immich.example.com/
 api_key: YOUR_API_KEY_HERE
+
+# Optional: paths to external tools used by client workflows for local
+# processing. Every field falls back to a PATH lookup if left unset, so this
+# section is only needed if the binary isn't already on PATH. Each field can
+# also be set via an environment variable instead (see comments below),
+# which takes precedence over this file.
+# tools:
+#   # Used by `client-workflow download-album --resize`. Accepts either the
+#   # modern unified "magick" (ImageMagick v7+) or the legacy "convert"
+#   # (v6) executable. Env var: IMMICH_IMAGEMAGICK_PATH
+#   imagemagick_path: /usr/bin/magick

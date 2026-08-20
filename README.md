@@ -257,7 +257,8 @@ Mirrors exactly one album into a local folder — the full originals, or just th
 
 1. **Resolve** the album from `--album-id` or `--album-name` (`GET /albums`/`GET /albums/{id}`) — a name must resolve to exactly one album, or the command lists every match and asks you to use `--album-id` instead
 2. **Fetch** the album's assets (`POST /search/metadata`, filtered by album), optionally dropping videos (`--ignore-videos`)
-3. **Download** each asset as either the full original (`GET /assets/{id}/original`) or its thumbnail (`GET /assets/{id}/thumbnail`, `--size thumbnail`) into `--target-dir`, named after the asset's own original file name (duplicate names within an album get a short, deterministic asset-ID suffix)
+3. **Download** each asset as either the full original (`GET /assets/{id}/original`) or its thumbnail (`GET /assets/{id}/thumbnail`, `--size thumbnail`) into `--target-dir`, named after the asset's own original file name (duplicate names within an album get a short, deterministic asset-ID suffix), optionally prefixed with its capture date/time (`--timestamp-prefix`)
+4. **Optionally resize** (`--resize`) each downloaded file to JPEG via ImageMagick, before it's written to its final name
 
 Without `--sync` this is a simple one-shot bulk download: every matching asset is (re-)downloaded, always overwriting whatever is already there.
 
@@ -268,7 +269,11 @@ With `--sync`, a hidden manifest (`.immich-album-sync.json`) is kept in `--targe
 - assets whose checksum is unchanged are skipped (**unchanged**)
 - manifest entries whose asset is no longer in the (filtered) album have their local file **deleted**
 
-Only files this tool itself downloaded (tracked in the manifest) are ever touched or deleted — anything else you put in the target folder is left alone. Change detection compares the *original* asset's checksum even in `--size thumbnail` mode (Immich exposes no separate thumbnail checksum, and a thumbnail is derived deterministically from the original), so a metadata-only edit that doesn't change the original file's bytes (e.g. a pure EXIF rotation) won't trigger a thumbnail re-download. The manifest also records which album and `--size` it was built for; pointing `--sync` at a folder whose manifest names a different album, or was built with a different `--size`, is refused rather than risk deleting unrelated files — use a fresh `--target-dir` to switch.
+Only files this tool itself downloaded (tracked in the manifest) are ever touched or deleted — anything else you put in the target folder is left alone. Change detection compares the *original* asset's checksum even in `--size thumbnail` mode (Immich exposes no separate thumbnail checksum, and a thumbnail is derived deterministically from the original), so a metadata-only edit that doesn't change the original file's bytes (e.g. a pure EXIF rotation) won't trigger a thumbnail re-download. The manifest also records which album, `--size`, `--resize`, and `--timestamp-prefix` it was built with; pointing `--sync` at a folder whose manifest doesn't match any of those for the current run is refused rather than risk deleting/misnaming files or mixing conventions — use a fresh `--target-dir` to switch.
+
+**`--timestamp-prefix`** prefixes each local file name with the asset's capture date/time (from its `LocalDateTime` metadata), formatted `yyyy-MM-dd_HH_mm_ss` (e.g. `2025-07-04_14_04_02_IMG_1234.jpg`), so a plain directory listing sorts chronologically. Assets that still collide after the prefix (e.g. burst shots within the same second) get the same short asset-ID suffix as the no-prefix case.
+
+**`--resize`** re-encodes every downloaded file to JPEG using [ImageMagick](https://imagemagick.org/), regardless of the source format (useful when local disk/transfer size matters more than preserving the exact original format — see `--size thumbnail` for an even smaller alternative). It requires the `magick` (v7+) or `convert` (legacy v6) executable, resolved in this order: `tools.imagemagick_path` in the config file, the `IMMICH_IMAGEMAGICK_PATH` environment variable, then a `PATH` lookup — checked once before any download starts, so a missing tool fails fast. `--resize-width`/`--resize-height` (pixels, either or both; 0 means unconstrained on that axis — ImageMagick fits the image within the box, preserving aspect ratio) control the target size, and `--resize-quality` (1-100, default 85) controls JPEG quality; omitting both width and height just re-encodes/re-compresses without changing dimensions.
 
 ```sh
 # One-shot download of every original in an album
@@ -277,12 +282,18 @@ immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./g
 # Thumbnails only (smaller footprint), skipping videos
 immich-admin cw download-album --album-id d4856b75-7700-414c-9dc2-4f6d501936d1 --target-dir ./garten-thumbs --size thumbnail --ignore-videos
 
+# Chronologically-sortable file names
+immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten --timestamp-prefix
+
+# Resize every downloaded photo to fit within 1920x1080, re-encoded to JPEG at quality 80
+immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten-1080p --resize --resize-width 1920 --resize-height 1080 --resize-quality 80
+
 # Keep a folder mirrored to the album going forward
 immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten --sync --dry-run
 immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten --sync --yes
 ```
 
-Flags: exactly one of `--album-id UUID` / `--album-name NAME`, `--target-dir DIR` (required), `--size original|thumbnail` (default `original`), `--ignore-videos`, `--sync`, `--dry-run`, `--yes` (skip the confirmation prompt before `--sync` deletes local files).
+Flags: exactly one of `--album-id UUID` / `--album-name NAME`, `--target-dir DIR` (required), `--size original|thumbnail` (default `original`), `--ignore-videos`, `--timestamp-prefix`, `--resize`, `--resize-width PIXELS`, `--resize-height PIXELS`, `--resize-quality 1-100` (default `85`; the latter three require `--resize`), `--sync`, `--dry-run`, `--yes` (skip the confirmation prompt before `--sync` deletes local files).
 
 The underlying operations are also available standalone: `assets download-original` and the new `assets download-thumbnail` (`GET /assets/{id}/thumbnail`, supporting the full `original|fullsize|preview|thumbnail` `AssetMediaSize` range plus `--edited`).
 

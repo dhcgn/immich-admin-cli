@@ -6,6 +6,7 @@
 package workflows
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,8 +14,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -40,6 +43,13 @@ type Manifest struct {
 	AlbumID   string                   `json:"albumId"`
 	AlbumName string                   `json:"albumName"`
 	Size      immichapi.AssetMediaSize `json:"size"`
+	// Resize and TimestampPrefix record whether this target directory was
+	// built with --resize / --timestamp-prefix, mirroring the Size guard:
+	// both change the local file's identity (format/name) entirely, so a
+	// later --sync run with a different setting is refused rather than
+	// silently mixing conventions in one folder (see PlanAlbumSync).
+	Resize          bool `json:"resize"`
+	TimestampPrefix bool `json:"timestampPrefix"`
 	// Assets is keyed by asset ID (string form of openapi_types.UUID).
 	Assets map[string]ManifestAsset `json:"assets"`
 }
@@ -72,9 +82,111 @@ type DownloadAlbumOptions struct {
 	// IgnoreVideos drops every AssetTypeEnum VIDEO asset before planning or
 	// downloading anything.
 	IgnoreVideos bool
+	// Resize, when Enabled, re-encodes every downloaded file to JPEG via
+	// ImageMagick, optionally resizing it (see ResizeOptions).
+	Resize ResizeOptions
+	// TimestampPrefix prefixes each local file name with the asset's
+	// capture date/time ("yyyy-MM-dd_HH_mm_ss", from LocalDateTime) so a
+	// plain directory listing sorts chronologically.
+	TimestampPrefix bool
 	// DryRun previews the planned actions without downloading, deleting, or
 	// writing the manifest.
 	DryRun bool
+}
+
+// DefaultResizeQuality is the JPEG quality used by --resize when
+// --resize-quality is not explicitly set.
+const DefaultResizeQuality = 85
+
+// ResizeOptions controls the optional ImageMagick post-processing step:
+// every downloaded file (original or thumbnail) is re-encoded to JPEG,
+// optionally resized to fit within Width/Height. It is a deliberate,
+// documented exception to "always original format" for cases where local
+// disk/transfer size matters more than preserving the exact source format.
+type ResizeOptions struct {
+	// Enabled turns the feature on. When false, every other field is
+	// ignored and downloaded files keep their natural format.
+	Enabled bool
+	// Width and Height are the target bounding box in pixels; 0 means
+	// unconstrained on that axis. ImageMagick's default -resize geometry
+	// (WxH) fits the image within the box preserving aspect ratio; giving
+	// only one of the two scales by that axis alone.
+	Width, Height int
+	// Quality is the JPEG quality (1-100). Zero is normalized to
+	// DefaultResizeQuality by BuildImageMagickArgs.
+	Quality int
+	// ExecutablePath is the resolved ImageMagick binary ("magick" for v7+,
+	// or the legacy "convert") — see ResolveImageMagickPath. Resolved once
+	// by the command layer before a batch starts (fail fast), not by this
+	// package.
+	ExecutablePath string
+}
+
+// ResolveImageMagickPath returns the ImageMagick executable to invoke:
+// explicit (from the config file's tools.imagemagick_path, or the
+// IMMICH_IMAGEMAGICK_PATH env var — see internal/config) if non-empty,
+// otherwise the first of "magick" (ImageMagick v7+, preferred) or "convert"
+// (legacy v6) found on PATH. Meant to be called once before a download
+// batch starts, so a missing tool fails fast rather than partway through.
+func ResolveImageMagickPath(explicit string) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+	for _, name := range []string{"magick", "convert"} {
+		if p, err := exec.LookPath(name); err == nil {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf("ImageMagick executable not found: set tools.imagemagick_path in the config file (or the IMMICH_IMAGEMAGICK_PATH env var), or install ImageMagick so 'magick' or 'convert' is on PATH")
+}
+
+// resizeGeometry returns the ImageMagick -resize geometry string for
+// width/height (see ResizeOptions.Width/Height), or "" if both are zero
+// (meaning: re-encode/quality-adjust only, no resize).
+func resizeGeometry(width, height int) string {
+	switch {
+	case width > 0 && height > 0:
+		return fmt.Sprintf("%dx%d", width, height)
+	case width > 0:
+		return fmt.Sprintf("%dx", width)
+	case height > 0:
+		return fmt.Sprintf("x%d", height)
+	default:
+		return ""
+	}
+}
+
+// BuildImageMagickArgs returns the CLI arguments (excluding the executable
+// itself) to convert srcPath into dstPath as a JPEG per opts. Pure (no
+// exec), so the exact geometry/quality construction is directly
+// unit-testable. Works identically whether the resolved executable is the
+// modern "magick" or the legacy "convert" — both accept
+// "<input> [-resize GEOM] -quality Q <output>".
+func BuildImageMagickArgs(srcPath, dstPath string, opts ResizeOptions) []string {
+	args := []string{srcPath}
+	if geometry := resizeGeometry(opts.Width, opts.Height); geometry != "" {
+		args = append(args, "-resize", geometry)
+	}
+	quality := opts.Quality
+	if quality <= 0 {
+		quality = DefaultResizeQuality
+	}
+	args = append(args, "-quality", strconv.Itoa(quality), dstPath)
+	return args
+}
+
+// RunImageMagickResize invokes opts.ExecutablePath to convert srcPath to
+// dstPath (always JPEG) per opts. Stderr is captured and included in the
+// error on failure for diagnosis.
+func RunImageMagickResize(ctx context.Context, srcPath, dstPath string, opts ResizeOptions) error {
+	args := BuildImageMagickArgs(srcPath, dstPath, opts)
+	cmd := exec.CommandContext(ctx, opts.ExecutablePath, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("running %s %s: %w: %s", opts.ExecutablePath, strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
 }
 
 // FilterOutVideos returns the assets whose Type is not VIDEO, preserving
@@ -89,26 +201,42 @@ func FilterOutVideos(assets []immichapi.AssetResponseDto) []immichapi.AssetRespo
 	return out
 }
 
+// timestampPrefixLayout is the Go reference-time layout for --timestamp-prefix,
+// equivalent to the sortable "yyyy-MM-dd_HH_mm_ss" pattern.
+const timestampPrefixLayout = "2006-01-02_15_04_05"
+
 // AssignLocalNames computes a collision-safe local base file name (without
-// extension) for every asset, derived from OriginalFileName. Immich allows
-// duplicate original file names within one album; when two or more assets
-// share the same base name (case-insensitively), every colliding entry gets
-// a short suffix built from its own asset ID appended, so the mapping is
-// deterministic across runs regardless of slice order (assets are sorted by
-// ID first).
-func AssignLocalNames(assets []immichapi.AssetResponseDto) map[string]string {
+// extension) for every asset, derived from OriginalFileName and, if
+// timestampPrefix, prefixed with the asset's capture date/time
+// (LocalDateTime, formatted as timestampPrefixLayout) so a plain directory
+// listing sorts chronologically. Immich allows duplicate original file
+// names within one album (and a timestamp prefix does not fully rule out
+// collisions either, e.g. burst shots within the same second); when two or
+// more assets end up with the same final base name (case-insensitively),
+// every colliding entry gets a short suffix built from its own asset ID
+// appended, so the mapping is deterministic across runs regardless of slice
+// order (assets are sorted by ID first).
+func AssignLocalNames(assets []immichapi.AssetResponseDto, timestampPrefix bool) map[string]string {
 	sorted := make([]immichapi.AssetResponseDto, len(assets))
 	copy(sorted, assets)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Id.String() < sorted[j].Id.String() })
 
+	localBase := func(a immichapi.AssetResponseDto) string {
+		base := baseNameOf(a.OriginalFileName)
+		if timestampPrefix {
+			base = a.LocalDateTime.Format(timestampPrefixLayout) + "_" + base
+		}
+		return base
+	}
+
 	counts := map[string]int{}
 	for _, a := range sorted {
-		counts[strings.ToLower(baseNameOf(a.OriginalFileName))]++
+		counts[strings.ToLower(localBase(a))]++
 	}
 
 	names := make(map[string]string, len(sorted))
 	for _, a := range sorted {
-		base := baseNameOf(a.OriginalFileName)
+		base := localBase(a)
 		if counts[strings.ToLower(base)] > 1 {
 			id := a.Id.String()
 			suffix := id
@@ -219,49 +347,79 @@ func FetchFilteredAlbumAssets(ctx context.Context, c *client.Client, albumID ope
 	return assets, nil
 }
 
-// downloadAssetFile downloads one asset (original or thumbnail, per size)
-// to destBasePath + <extension>, where the extension is the original file's
-// own extension for immichapi.Original, or sniffed from the actual response
-// Content-Type for immichapi.Thumbnail (see ExtensionForContentType). It
-// returns the full destination path used.
-func downloadAssetFile(ctx context.Context, c *client.Client, a immichapi.AssetResponseDto, size immichapi.AssetMediaSize, destBasePath string) (string, error) {
+// fetchAssetStream requests one asset (original or thumbnail, per size) and
+// returns its body stream (caller must close it) plus the file extension to
+// use: the original file's own extension for immichapi.Original, or sniffed
+// from the actual response Content-Type for immichapi.Thumbnail (see
+// ExtensionForContentType).
+func fetchAssetStream(ctx context.Context, c *client.Client, a immichapi.AssetResponseDto, size immichapi.AssetMediaSize) (io.ReadCloser, string, error) {
 	switch size {
 	case immichapi.Original:
 		resp, err := c.API.DownloadAsset(ctx, a.Id, nil)
 		if err != nil {
-			return "", fmt.Errorf("downloading original: %w", err)
+			return nil, "", fmt.Errorf("downloading original: %w", err)
 		}
-		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
+			defer resp.Body.Close()
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-			return "", fmt.Errorf("server returned %s (expected 200): %s", resp.Status, strings.TrimSpace(string(body)))
+			return nil, "", fmt.Errorf("server returned %s (expected 200): %s", resp.Status, strings.TrimSpace(string(body)))
 		}
-		dest := destBasePath + filepath.Ext(a.OriginalFileName)
-		if err := writeAssetFile(dest, resp.Body); err != nil {
-			return "", err
-		}
-		return dest, nil
+		return resp.Body, filepath.Ext(a.OriginalFileName), nil
 
 	case immichapi.Thumbnail:
 		thumbSize := immichapi.Thumbnail
 		resp, err := c.API.ViewAsset(ctx, a.Id, &immichapi.ViewAssetParams{Size: &thumbSize})
 		if err != nil {
-			return "", fmt.Errorf("downloading thumbnail: %w", err)
+			return nil, "", fmt.Errorf("downloading thumbnail: %w", err)
 		}
-		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
+			defer resp.Body.Close()
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-			return "", fmt.Errorf("server returned %s (expected 200): %s", resp.Status, strings.TrimSpace(string(body)))
+			return nil, "", fmt.Errorf("server returned %s (expected 200): %s", resp.Status, strings.TrimSpace(string(body)))
 		}
-		dest := destBasePath + ExtensionForContentType(resp.Header.Get("Content-Type"))
-		if err := writeAssetFile(dest, resp.Body); err != nil {
-			return "", err
-		}
-		return dest, nil
+		return resp.Body, ExtensionForContentType(resp.Header.Get("Content-Type")), nil
 
 	default:
-		return "", fmt.Errorf("unsupported download-album size %q (must be %q or %q)", size, immichapi.Original, immichapi.Thumbnail)
+		return nil, "", fmt.Errorf("unsupported download-album size %q (must be %q or %q)", size, immichapi.Original, immichapi.Thumbnail)
 	}
+}
+
+// downloadAssetFile downloads one asset (original or thumbnail, per size)
+// to destBasePath + <extension>, and returns the full destination path
+// used. If resize.Enabled, the downloaded file is first saved to a
+// temporary path, then re-encoded to destBasePath+".jpg" via
+// RunImageMagickResize, and the temporary file is removed — so the returned
+// path is always "destBasePath.jpg" in that case, regardless of the
+// original/thumbnail's natural format.
+func downloadAssetFile(ctx context.Context, c *client.Client, a immichapi.AssetResponseDto, size immichapi.AssetMediaSize, destBasePath string, resize ResizeOptions) (string, error) {
+	body, ext, err := fetchAssetStream(ctx, c, a, size)
+	if err != nil {
+		return "", err
+	}
+	defer body.Close()
+
+	rawPath := destBasePath + ext
+	if resize.Enabled {
+		// Download to a distinct temporary path so a same-extension source
+		// (e.g. an original that's already .jpg) never collides with the
+		// final resized output path.
+		rawPath = destBasePath + ".download-tmp" + ext
+	}
+	if err := writeAssetFile(rawPath, body); err != nil {
+		return "", err
+	}
+
+	if !resize.Enabled {
+		return rawPath, nil
+	}
+
+	finalPath := destBasePath + ".jpg"
+	resizeErr := RunImageMagickResize(ctx, rawPath, finalPath, resize)
+	os.Remove(rawPath) // always clean up the temporary raw download
+	if resizeErr != nil {
+		return "", fmt.Errorf("resizing with ImageMagick: %w", resizeErr)
+	}
+	return finalPath, nil
 }
 
 func writeAssetFile(path string, r io.Reader) error {
@@ -300,12 +458,12 @@ func DownloadAlbum(ctx context.Context, c *client.Client, album immichapi.AlbumR
 		return fmt.Errorf("creating target directory %q: %w", targetDir, err)
 	}
 
-	names := AssignLocalNames(assets)
+	names := AssignLocalNames(assets, opts.TimestampPrefix)
 	return RunBatch(assets,
 		func(a immichapi.AssetResponseDto) string { return a.OriginalFileName },
 		func(a immichapi.AssetResponseDto) error {
 			base := filepath.Join(targetDir, names[a.Id.String()])
-			dest, err := downloadAssetFile(ctx, c, a, opts.Size, base)
+			dest, err := downloadAssetFile(ctx, c, a, opts.Size, base, opts.Resize)
 			if err != nil {
 				return err
 			}
@@ -391,6 +549,12 @@ func PlanAlbumSync(ctx context.Context, c *client.Client, album immichapi.AlbumR
 		if manifest.Size != "" && manifest.Size != opts.Size {
 			return nil, SyncPlan{}, Manifest{}, fmt.Errorf("manifest in %q was created with --size %s, not %s — use a different --target-dir to switch", targetDir, manifest.Size, opts.Size)
 		}
+		if manifest.Resize != opts.Resize.Enabled {
+			return nil, SyncPlan{}, Manifest{}, fmt.Errorf("manifest in %q was created with --resize=%t, not %t — use a different --target-dir to switch", targetDir, manifest.Resize, opts.Resize.Enabled)
+		}
+		if manifest.TimestampPrefix != opts.TimestampPrefix {
+			return nil, SyncPlan{}, Manifest{}, fmt.Errorf("manifest in %q was created with --timestamp-prefix=%t, not %t — use a different --target-dir to switch", targetDir, manifest.TimestampPrefix, opts.TimestampPrefix)
+		}
 	}
 
 	assets, err := FetchFilteredAlbumAssets(ctx, c, album.Id, opts.IgnoreVideos)
@@ -419,6 +583,8 @@ func ApplyAlbumSync(ctx context.Context, c *client.Client, album immichapi.Album
 	manifest.AlbumID = album.Id.String()
 	manifest.AlbumName = album.AlbumName
 	manifest.Size = opts.Size
+	manifest.Resize = opts.Resize.Enabled
+	manifest.TimestampPrefix = opts.TimestampPrefix
 
 	for _, r := range plan.Removals {
 		path := filepath.Join(targetDir, r.FileName)
@@ -429,7 +595,7 @@ func ApplyAlbumSync(ctx context.Context, c *client.Client, album immichapi.Album
 		fmt.Printf("Removed %s (asset no longer in album)\n", path)
 	}
 
-	names := AssignLocalNames(allAssets)
+	names := AssignLocalNames(allAssets, opts.TimestampPrefix)
 	toDownload := make([]immichapi.AssetResponseDto, 0, len(plan.Additions)+len(plan.Updates))
 	toDownload = append(toDownload, plan.Additions...)
 	toDownload = append(toDownload, plan.Updates...)
@@ -438,7 +604,7 @@ func ApplyAlbumSync(ctx context.Context, c *client.Client, album immichapi.Album
 		func(a immichapi.AssetResponseDto) string { return a.OriginalFileName },
 		func(a immichapi.AssetResponseDto) error {
 			base := filepath.Join(targetDir, names[a.Id.String()])
-			dest, err := downloadAssetFile(ctx, c, a, opts.Size, base)
+			dest, err := downloadAssetFile(ctx, c, a, opts.Size, base, opts.Resize)
 			if err != nil {
 				return err
 			}
