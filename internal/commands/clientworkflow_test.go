@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -207,5 +208,128 @@ func TestFixableCount(t *testing.T) {
 	}
 	if got := fixableCount(checks); got != 3 {
 		t.Errorf("fixableCount() = %d, want 3 (year-precision mismatches don't count)", got)
+	}
+}
+
+func TestValidateDownloadAlbumAlbumFlags(t *testing.T) {
+	tests := []struct {
+		name      string
+		albumID   string
+		albumName string
+		wantErr   bool
+	}{
+		{name: "only id", albumID: "some-id", wantErr: false},
+		{name: "only name", albumName: "Vacation", wantErr: false},
+		{name: "neither", wantErr: true},
+		{name: "both", albumID: "some-id", albumName: "Vacation", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateDownloadAlbumAlbumFlags(tc.albumID, tc.albumName)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("validateDownloadAlbumAlbumFlags(%q, %q) error = %v, wantErr %v", tc.albumID, tc.albumName, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestResolveDownloadAlbumSize(t *testing.T) {
+	tests := []struct {
+		raw     string
+		want    immichapi.AssetMediaSize
+		wantErr bool
+	}{
+		{raw: "original", want: immichapi.Original},
+		{raw: "thumbnail", want: immichapi.Thumbnail},
+		{raw: "preview", wantErr: true},
+		{raw: "fullsize", wantErr: true},
+		{raw: "", wantErr: true},
+		{raw: "bogus", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.raw, func(t *testing.T) {
+			got, err := resolveDownloadAlbumSize(tc.raw)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("resolveDownloadAlbumSize(%q) error = %v, wantErr %v", tc.raw, err, tc.wantErr)
+			}
+			if err == nil && got != tc.want {
+				t.Errorf("resolveDownloadAlbumSize(%q) = %q, want %q", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateResizeFlags(t *testing.T) {
+	tests := []struct {
+		name                            string
+		enabled                         bool
+		widthSet, heightSet, qualitySet bool
+		width, height, quality          int
+		wantErr                         bool
+	}{
+		{name: "disabled, nothing set", enabled: false, wantErr: false},
+		{name: "disabled, width set", enabled: false, widthSet: true, width: 800, wantErr: true},
+		{name: "disabled, height set", enabled: false, heightSet: true, height: 600, wantErr: true},
+		{name: "disabled, quality set", enabled: false, qualitySet: true, quality: 70, wantErr: true},
+		{name: "enabled, defaults", enabled: true, quality: 85, wantErr: false},
+		{name: "enabled, width and height", enabled: true, width: 800, height: 600, quality: 85, wantErr: false},
+		{name: "enabled, negative width", enabled: true, width: -1, quality: 85, wantErr: true},
+		{name: "enabled, negative height", enabled: true, height: -1, quality: 85, wantErr: true},
+		{name: "enabled, quality too low", enabled: true, quality: 0, wantErr: true},
+		{name: "enabled, quality too high", enabled: true, quality: 101, wantErr: true},
+		{name: "enabled, quality at bounds", enabled: true, quality: 1, wantErr: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateResizeFlags(tc.enabled, tc.widthSet, tc.heightSet, tc.qualitySet, tc.width, tc.height, tc.quality)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("validateResizeFlags(%+v) error = %v, wantErr %v", tc, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateResizeVideoPreset(t *testing.T) {
+	tests := []struct {
+		raw     string
+		wantErr bool
+	}{
+		{raw: "", wantErr: false},
+		{raw: workflows.ResizeVideoPreset1080pWebFriendly, wantErr: false},
+		{raw: "bogus-preset", wantErr: true},
+		{raw: "1080p-web-friendly ", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.raw, func(t *testing.T) {
+			err := validateResizeVideoPreset(tc.raw)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("validateResizeVideoPreset(%q) error = %v, wantErr %v", tc.raw, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestPrintDownloadAlbumSyncPlan(t *testing.T) {
+	album := testAlbum("Vacation")
+	plan := workflows.SyncPlan{
+		Additions: []immichapi.AssetResponseDto{{Id: openapi_types.UUID(uuid.New()), OriginalFileName: "new.jpg"}},
+		Updates:   []immichapi.AssetResponseDto{{Id: openapi_types.UUID(uuid.New()), OriginalFileName: "changed.jpg"}},
+		Removals:  []workflows.ManifestRemoval{{AssetID: "gone-id", FileName: "gone.jpg"}},
+	}
+
+	var buf bytes.Buffer
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	printDownloadAlbumSyncPlan(album, plan)
+	w.Close()
+	os.Stdout = oldStdout
+	buf.ReadFrom(r)
+	out := buf.String()
+
+	for _, want := range []string{"1 to add", "1 to update", "1 to remove", "new.jpg", "changed.jpg", "gone.jpg"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("printDownloadAlbumSyncPlan() output missing %q, got: %q", want, out)
+		}
 	}
 }
