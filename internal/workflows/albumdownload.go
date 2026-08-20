@@ -380,7 +380,11 @@ func LoadManifest(targetDir string) (m Manifest, existed bool, err error) {
 }
 
 // SaveManifest writes m to ManifestFileName inside targetDir, overwriting
-// any existing manifest.
+// any existing manifest. The write is atomic (temp file + rename) so a
+// process interrupted mid-write (e.g. Ctrl+C, crash, power loss) can never
+// leave a corrupt, half-written manifest on disk — see ApplyAlbumSync,
+// which calls this after every single asset so interrupting a long sync
+// never loses more than the one in-flight item's progress.
 func SaveManifest(targetDir string, m Manifest) error {
 	m.Version = manifestVersion
 	data, err := json.MarshalIndent(m, "", "  ")
@@ -388,7 +392,22 @@ func SaveManifest(targetDir string, m Manifest) error {
 		return fmt.Errorf("encoding manifest: %w", err)
 	}
 	path := filepath.Join(targetDir, ManifestFileName)
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	tmp, err := os.CreateTemp(targetDir, ManifestFileName+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("creating temporary manifest file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	_, writeErr := tmp.Write(data)
+	closeErr := tmp.Close()
+	if writeErr != nil || closeErr != nil {
+		os.Remove(tmpPath)
+		if writeErr != nil {
+			return fmt.Errorf("writing manifest %q: %w", path, writeErr)
+		}
+		return fmt.Errorf("writing manifest %q: %w", path, closeErr)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
 		return fmt.Errorf("writing manifest %q: %w", path, err)
 	}
 	return nil
@@ -590,6 +609,33 @@ func writeAssetFile(path string, r io.Reader) error {
 	return nil
 }
 
+// downloadTempFileGlob matches the temporary raw-download files
+// downloadAssetFile creates while --resize / --resize-video-preset
+// converts a file (see downloadAssetFile). They are always removed right
+// after conversion, whether it succeeds or fails, within the same run —
+// but a run interrupted mid-conversion (Ctrl+C, crash, killed process)
+// never reaches that cleanup, leaving one behind. Any match found at the
+// start of a later run is therefore always debris from an earlier
+// interrupted run and safe to delete.
+const downloadTempFileGlob = "*.download-tmp.*"
+
+// cleanStaleDownloadTempFiles removes any leftover files matching
+// downloadTempFileGlob in targetDir. It is best-effort: a failure to
+// remove one file is reported to stderr but does not stop the run.
+func cleanStaleDownloadTempFiles(targetDir string) {
+	matches, err := filepath.Glob(filepath.Join(targetDir, downloadTempFileGlob))
+	if err != nil || len(matches) == 0 {
+		return
+	}
+	for _, m := range matches {
+		if err := os.Remove(m); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not remove stale temp file %q (left over from an interrupted previous run): %v\n", m, err)
+			continue
+		}
+		fmt.Printf("Removed stale temp file from an interrupted previous run: %s\n", m)
+	}
+}
+
 // DownloadAlbum is the plain (non-sync) mode: it fetches, filters, and
 // downloads every matching asset into targetDir, one HTTP request per
 // asset, always overwriting any existing file of the same name. It builds
@@ -613,6 +659,7 @@ func DownloadAlbum(ctx context.Context, c *client.Client, album immichapi.AlbumR
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return fmt.Errorf("creating target directory %q: %w", targetDir, err)
 	}
+	cleanStaleDownloadTempFiles(targetDir)
 
 	names := AssignLocalNames(assets, opts.TimestampPrefix)
 	return RunBatch(assets,
@@ -726,16 +773,22 @@ func PlanAlbumSync(ctx context.Context, c *client.Client, album immichapi.AlbumR
 
 // ApplyAlbumSync executes plan against targetDir: downloads every asset in
 // plan.Additions and plan.Updates, deletes the local file for every
-// plan.Removals entry, and persists the updated manifest (stamping it with
-// album/opts.Size so future runs can validate against it). Downloads
-// continue on a per-asset error and are summarized at the end (the usual
-// bulk convention), but a local-file deletion error aborts immediately —
-// leaving the manifest unsaved is safer than saving one that no longer
-// matches disk state.
+// plan.Removals entry, and persists the updated manifest along the way —
+// stamping it with album/opts.Size/etc. so future runs can validate against
+// it. The manifest is saved to disk after every single removal and every
+// successful download (not just once at the end): interrupting a long sync
+// (Ctrl+C, crash, closed terminal) never loses more than the one item that
+// was in flight, and every previously downloaded/removed file is correctly
+// reflected on the next run. Downloads continue on a per-asset error and
+// are summarized at the end (the usual bulk convention), but a local-file
+// deletion error aborts immediately — leaving the manifest as of the last
+// successful save is safer than continuing once disk state and the
+// manifest may have diverged.
 func ApplyAlbumSync(ctx context.Context, c *client.Client, album immichapi.AlbumResponseDto, targetDir string, allAssets []immichapi.AssetResponseDto, plan SyncPlan, manifest Manifest, opts DownloadAlbumOptions) error {
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return fmt.Errorf("creating target directory %q: %w", targetDir, err)
 	}
+	cleanStaleDownloadTempFiles(targetDir)
 	if manifest.Assets == nil {
 		manifest.Assets = map[string]ManifestAsset{}
 	}
@@ -746,12 +799,22 @@ func ApplyAlbumSync(ctx context.Context, c *client.Client, album immichapi.Album
 	manifest.ResizeVideoPreset = resizeVideoPresetOf(opts.ResizeVideo)
 	manifest.TimestampPrefix = opts.TimestampPrefix
 
+	// Persist the (possibly brand-new) manifest metadata immediately, before
+	// any removal/download runs, so even an interruption during the very
+	// first item leaves a valid manifest behind rather than none at all.
+	if err := SaveManifest(targetDir, manifest); err != nil {
+		return err
+	}
+
 	for _, r := range plan.Removals {
 		path := filepath.Join(targetDir, r.FileName)
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("deleting %q: %w", path, err)
 		}
 		delete(manifest.Assets, r.AssetID)
+		if err := SaveManifest(targetDir, manifest); err != nil {
+			return err
+		}
 		fmt.Printf("Removed %s (asset no longer in album)\n", path)
 	}
 
@@ -760,7 +823,7 @@ func ApplyAlbumSync(ctx context.Context, c *client.Client, album immichapi.Album
 	toDownload = append(toDownload, plan.Additions...)
 	toDownload = append(toDownload, plan.Updates...)
 
-	downloadErr := RunBatch(toDownload,
+	return RunBatch(toDownload,
 		func(a immichapi.AssetResponseDto) string { return a.OriginalFileName },
 		func(a immichapi.AssetResponseDto) error {
 			base := filepath.Join(targetDir, names[a.Id.String()])
@@ -773,13 +836,11 @@ func ApplyAlbumSync(ctx context.Context, c *client.Client, album immichapi.Album
 				Checksum: a.Checksum,
 				Type:     string(a.Type),
 			}
+			if err := SaveManifest(targetDir, manifest); err != nil {
+				return fmt.Errorf("saving manifest after downloading %q: %w", a.OriginalFileName, err)
+			}
 			fmt.Printf("Saved %s\n", dest)
 			return nil
 		},
 	)
-
-	if err := SaveManifest(targetDir, manifest); err != nil {
-		return err
-	}
-	return downloadErr
 }

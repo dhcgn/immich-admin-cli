@@ -2,6 +2,7 @@ package workflows
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -214,6 +215,69 @@ func TestLoadManifestMissingFileIsNotAnError(t *testing.T) {
 	}
 	if len(m.Assets) != 0 {
 		t.Errorf("LoadManifest() Assets = %v, want empty", m.Assets)
+	}
+}
+
+func TestSaveManifestLeavesNoTempFileBehind(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := SaveManifest(dir, Manifest{AlbumID: "a", Assets: map[string]ManifestAsset{}}); err != nil {
+		t.Fatalf("SaveManifest() error = %v", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir() error = %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != ManifestFileName {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		t.Errorf("directory contents after SaveManifest() = %v, want only [%s]", names, ManifestFileName)
+	}
+}
+
+func TestSaveManifestOverwritesExisting(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := SaveManifest(dir, Manifest{AlbumID: "first", Assets: map[string]ManifestAsset{}}); err != nil {
+		t.Fatalf("SaveManifest() first error = %v", err)
+	}
+	if err := SaveManifest(dir, Manifest{AlbumID: "second", Assets: map[string]ManifestAsset{}}); err != nil {
+		t.Fatalf("SaveManifest() second error = %v", err)
+	}
+
+	got, _, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("LoadManifest() error = %v", err)
+	}
+	if got.AlbumID != "second" {
+		t.Errorf("LoadManifest().AlbumID = %q, want %q (second save should have overwritten the first)", got.AlbumID, "second")
+	}
+}
+
+func TestCleanStaleDownloadTempFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	stale1 := filepath.Join(dir, "2025-07-04_photo.download-tmp.jpg")
+	stale2 := filepath.Join(dir, "2025-07-04_video.download-tmp.mkv")
+	keep := filepath.Join(dir, "2025-07-04_photo.jpg")
+	for _, p := range []string{stale1, stale2, keep} {
+		if err := os.WriteFile(p, []byte("data"), 0o644); err != nil {
+			t.Fatalf("writing fixture %q: %v", p, err)
+		}
+	}
+
+	cleanStaleDownloadTempFiles(dir)
+
+	for _, p := range []string{stale1, stale2} {
+		if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("stale temp file %q still exists after cleanup (stat err = %v)", p, err)
+		}
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Errorf("non-temp file %q was removed by cleanup: %v", keep, err)
 	}
 }
 
