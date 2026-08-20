@@ -662,9 +662,11 @@ func DownloadAlbum(ctx context.Context, c *client.Client, album immichapi.AlbumR
 	cleanStaleDownloadTempFiles(targetDir)
 
 	names := AssignLocalNames(assets, opts.TimestampPrefix)
+	progress := NewProgress(len(assets))
 	return RunBatch(assets,
 		func(a immichapi.AssetResponseDto) string { return a.OriginalFileName },
 		func(a immichapi.AssetResponseDto) error {
+			progress.Step(a.OriginalFileName)
 			base := filepath.Join(targetDir, names[a.Id.String()])
 			dest, err := downloadAssetFile(ctx, c, a, opts.Size, base, opts.Resize, opts.ResizeVideo)
 			if err != nil {
@@ -806,7 +808,9 @@ func ApplyAlbumSync(ctx context.Context, c *client.Client, album immichapi.Album
 		return err
 	}
 
+	removeProgress := NewProgress(len(plan.Removals))
 	for _, r := range plan.Removals {
+		removeProgress.Step(r.FileName)
 		path := filepath.Join(targetDir, r.FileName)
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("deleting %q: %w", path, err)
@@ -823,9 +827,11 @@ func ApplyAlbumSync(ctx context.Context, c *client.Client, album immichapi.Album
 	toDownload = append(toDownload, plan.Additions...)
 	toDownload = append(toDownload, plan.Updates...)
 
+	downloadProgress := NewProgress(len(toDownload))
 	return RunBatch(toDownload,
 		func(a immichapi.AssetResponseDto) string { return a.OriginalFileName },
 		func(a immichapi.AssetResponseDto) error {
+			downloadProgress.Step(a.OriginalFileName)
 			base := filepath.Join(targetDir, names[a.Id.String()])
 			dest, err := downloadAssetFile(ctx, c, a, opts.Size, base, opts.Resize, opts.ResizeVideo)
 			if err != nil {

@@ -260,6 +260,8 @@ Mirrors exactly one album into a local folder — the full originals, or just th
 3. **Download** each asset as either the full original (`GET /assets/{id}/original`) or its thumbnail (`GET /assets/{id}/thumbnail`, `--size thumbnail`) into `--target-dir`, named after the asset's own original file name (duplicate names within an album get a short, deterministic asset-ID suffix), optionally prefixed with its capture date/time (`--timestamp-prefix`)
 4. **Optionally resize images** (`--resize`) to JPEG via ImageMagick, or **re-encode videos** (`--resize-video-preset`) via ffmpeg, before the file is written to its final name
 
+Since downloading (and especially resizing/re-encoding) many large assets can take a long time, a progress line is printed to stderr before each asset starts — `[i/N  P%] elapsed .., eta ..: filename` — so you can see how far along the batch is and roughly how much longer it will take; the ETA is a simple running average over completed items, so it firms up as the batch progresses.
+
 Without `--sync` this is a simple one-shot bulk download: every matching asset is (re-)downloaded, always overwriting whatever is already there.
 
 With `--sync`, a hidden manifest (`.immich-album-sync.json`) is kept in `--target-dir` so repeated runs behave like a proper mirror instead of a blind re-download:

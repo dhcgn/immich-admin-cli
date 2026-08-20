@@ -10,13 +10,17 @@
 // destructive step) never run after an earlier failure. RunBatch layers the
 // same continue-on-error + summary-exit-code convention used by bulk
 // commands (see internal/commands/helpers.go) on top, for running a workflow
-// across many items.
+// across many items. Progress reports "[i/N] elapsed/eta" lines for
+// long-running batches (e.g. download-album's --resize/
+// --resize-video-preset re-encoding) so users can gauge how far along a
+// multi-minute run is and roughly how much longer it will take.
 package workflows
 
 import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 )
 
 // Step is a single named operation within a workflow, executed for one item
@@ -80,4 +84,54 @@ func RunBatch[T any](items []T, label func(T) string, fn func(T) error) error {
 		return fmt.Errorf("%d of %d item(s) failed", failures, len(items))
 	}
 	return nil
+}
+
+// Progress prints a "[i/total  P%] elapsed .., eta ..: label" line to
+// stderr before each item of a long-running batch starts, so a slow
+// multi-minute run (e.g. downloading and re-encoding many large photos and
+// videos) gives the user a running sense of how far along it is and
+// roughly how much longer it will take, instead of going silent until it
+// finishes. It is not a generic progress-bar library — just enough for
+// this project's sequential, one-item-at-a-time batches (see RunBatch);
+// concurrent use from multiple goroutines is not supported.
+type Progress struct {
+	total int
+	done  int
+	start time.Time
+}
+
+// NewProgress creates a Progress tracker for a batch of total items, with
+// its elapsed-time clock starting now.
+func NewProgress(total int) *Progress {
+	return &Progress{total: total, start: time.Now()}
+}
+
+// Step prints the progress line for the next item (labeled, e.g., by its
+// file name) and advances the internal counter. The ETA shown is a simple
+// linear extrapolation from the average time per item completed so far; it
+// is omitted before the second item, since one data point can't be
+// averaged into a rate yet.
+func (p *Progress) Step(label string) {
+	p.done++
+	fmt.Fprintln(os.Stderr, progressLine(p.done, p.total, time.Since(p.start), label))
+}
+
+// progressLine renders the text for one Progress.Step call, given the
+// item's 1-based position among total and the time elapsed since the
+// batch started. Pure (no time.Now() call, no I/O) so it is directly
+// unit-testable.
+func progressLine(position, total int, elapsed time.Duration, label string) string {
+	pct := 100.0
+	if total > 0 {
+		pct = float64(position) / float64(total) * 100
+	}
+	line := fmt.Sprintf("[%d/%d %5.1f%%] elapsed %s", position, total, pct, elapsed.Round(time.Second))
+
+	completed := position - 1
+	if completed > 0 {
+		avgPerItem := elapsed / time.Duration(completed)
+		remaining := avgPerItem * time.Duration(total-completed)
+		line += fmt.Sprintf(", eta %s", remaining.Round(time.Second))
+	}
+	return line + ": " + label
 }
