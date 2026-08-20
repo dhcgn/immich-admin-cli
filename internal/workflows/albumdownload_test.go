@@ -306,6 +306,72 @@ func TestShouldResize(t *testing.T) {
 	}
 }
 
+func TestBuildFFmpegArgs(t *testing.T) {
+	got, err := BuildFFmpegArgs("input.mkv", "output-1080p.mp4", ResizeVideoPreset1080pWebFriendly)
+	if err != nil {
+		t.Fatalf("BuildFFmpegArgs() error = %v", err)
+	}
+	want := []string{
+		"-y", "-nostdin", "-hide_banner", "-loglevel", "error",
+		"-i", "input.mkv",
+		"-vf", "scale=-2:1080",
+		"-c:v", "libx264", "-preset", "medium", "-crf", "22",
+		"-pix_fmt", "yuv420p",
+		"-c:a", "aac", "-b:a", "128k",
+		"-movflags", "+faststart",
+		"output-1080p.mp4",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("BuildFFmpegArgs() = %v, want %v", got, want)
+	}
+}
+
+func TestBuildFFmpegArgsUnknownPreset(t *testing.T) {
+	if _, err := BuildFFmpegArgs("in.mkv", "out.mp4", "bogus-preset"); err == nil {
+		t.Fatal("BuildFFmpegArgs() with an unknown preset error = nil, want an error")
+	}
+}
+
+func TestResolveFFmpegPath(t *testing.T) {
+	if got, err := ResolveFFmpegPath("/custom/path/to/ffmpeg"); err != nil || got != "/custom/path/to/ffmpeg" {
+		t.Errorf("ResolveFFmpegPath(explicit) = (%q, %v), want (\"/custom/path/to/ffmpeg\", nil)", got, err)
+	}
+}
+
+func TestShouldResizeVideo(t *testing.T) {
+	enabled := ResizeVideoOptions{Enabled: true, Preset: ResizeVideoPreset1080pWebFriendly}
+	disabled := ResizeVideoOptions{Enabled: false}
+
+	tests := []struct {
+		name        string
+		resizeVideo ResizeVideoOptions
+		size        immichapi.AssetMediaSize
+		assetType   immichapi.AssetTypeEnum
+		want        bool
+	}{
+		{name: "disabled, original, video", resizeVideo: disabled, size: immichapi.Original, assetType: immichapi.VIDEO, want: false},
+		{name: "enabled, original, video", resizeVideo: enabled, size: immichapi.Original, assetType: immichapi.VIDEO, want: true},
+		{name: "enabled, original, image: never transcode a real image as video", resizeVideo: enabled, size: immichapi.Original, assetType: immichapi.IMAGE, want: false},
+		{name: "enabled, thumbnail, video: thumbnail is never a video stream", resizeVideo: enabled, size: immichapi.Thumbnail, assetType: immichapi.VIDEO, want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldResizeVideo(tc.resizeVideo, tc.size, tc.assetType); got != tc.want {
+				t.Errorf("shouldResizeVideo(%+v, %q, %q) = %t, want %t", tc.resizeVideo, tc.size, tc.assetType, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResizeVideoPresetOf(t *testing.T) {
+	if got := resizeVideoPresetOf(ResizeVideoOptions{Enabled: false, Preset: ResizeVideoPreset1080pWebFriendly}); got != "" {
+		t.Errorf("resizeVideoPresetOf(disabled) = %q, want \"\"", got)
+	}
+	if got := resizeVideoPresetOf(ResizeVideoOptions{Enabled: true, Preset: ResizeVideoPreset1080pWebFriendly}); got != ResizeVideoPreset1080pWebFriendly {
+		t.Errorf("resizeVideoPresetOf(enabled) = %q, want %q", got, ResizeVideoPreset1080pWebFriendly)
+	}
+}
+
 func TestPlanAlbumSyncRefusesMismatchedManifest(t *testing.T) {
 	album := immichapi.AlbumResponseDto{Id: openapi_types.UUID(uuid.New()), AlbumName: "Vacation"}
 
@@ -324,6 +390,10 @@ func TestPlanAlbumSyncRefusesMismatchedManifest(t *testing.T) {
 		{
 			name:     "different resize setting",
 			manifest: Manifest{AlbumID: album.Id.String(), Size: immichapi.Original, Resize: true},
+		},
+		{
+			name:     "different resize-video-preset setting",
+			manifest: Manifest{AlbumID: album.Id.String(), Size: immichapi.Original, ResizeVideoPreset: ResizeVideoPreset1080pWebFriendly},
 		},
 		{
 			name:     "different timestamp-prefix setting",

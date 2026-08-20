@@ -29,11 +29,14 @@ type Tools struct {
 	// for v7+, or "convert" for legacy v6) used by
 	// `client-workflow download-album --resize`.
 	ImageMagickPath string
+	// FFmpegPath is the path to the ffmpeg executable used by
+	// `client-workflow download-album --resize-video-preset`.
+	FFmpegPath string
 }
 
 // Load reads the YAML config file at path. The environment variables
-// IMMICH_SERVER, IMMICH_API_KEY, and IMMICH_IMAGEMAGICK_PATH override the
-// file values.
+// IMMICH_SERVER, IMMICH_API_KEY, IMMICH_IMAGEMAGICK_PATH, and
+// IMMICH_FFMPEG_PATH override the file values.
 func Load(path string) (*Config, error) {
 	v := viper.New()
 	v.SetConfigFile(path)
@@ -46,6 +49,9 @@ func Load(path string) (*Config, error) {
 	if err := v.BindEnv("tools.imagemagick_path", "IMMICH_IMAGEMAGICK_PATH"); err != nil {
 		return nil, fmt.Errorf("binding IMMICH_IMAGEMAGICK_PATH: %w", err)
 	}
+	if err := v.BindEnv("tools.ffmpeg_path", "IMMICH_FFMPEG_PATH"); err != nil {
+		return nil, fmt.Errorf("binding IMMICH_FFMPEG_PATH: %w", err)
+	}
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("reading config file %q: %w", path, err)
 	}
@@ -55,6 +61,7 @@ func Load(path string) (*Config, error) {
 		APIKey: v.GetString("api_key"),
 		Tools: Tools{
 			ImageMagickPath: v.GetString("tools.imagemagick_path"),
+			FFmpegPath:      v.GetString("tools.ffmpeg_path"),
 		},
 	}
 	if err := cfg.validate(); err != nil {

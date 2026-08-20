@@ -43,13 +43,17 @@ type Manifest struct {
 	AlbumID   string                   `json:"albumId"`
 	AlbumName string                   `json:"albumName"`
 	Size      immichapi.AssetMediaSize `json:"size"`
-	// Resize and TimestampPrefix record whether this target directory was
-	// built with --resize / --timestamp-prefix, mirroring the Size guard:
-	// both change the local file's identity (format/name) entirely, so a
-	// later --sync run with a different setting is refused rather than
-	// silently mixing conventions in one folder (see PlanAlbumSync).
-	Resize          bool `json:"resize"`
-	TimestampPrefix bool `json:"timestampPrefix"`
+	// Resize, ResizeVideoPreset, and TimestampPrefix record whether this
+	// target directory was built with --resize / --resize-video-preset /
+	// --timestamp-prefix, mirroring the Size guard: all change the local
+	// file's identity (format/name) entirely, so a later --sync run with a
+	// different setting is refused rather than silently mixing conventions
+	// in one folder (see PlanAlbumSync).
+	Resize bool `json:"resize"`
+	// ResizeVideoPreset is "" when --resize-video-preset was not used, or
+	// the preset name otherwise.
+	ResizeVideoPreset string `json:"resizeVideoPreset,omitempty"`
+	TimestampPrefix   bool   `json:"timestampPrefix"`
 	// Assets is keyed by asset ID (string form of openapi_types.UUID).
 	Assets map[string]ManifestAsset `json:"assets"`
 }
@@ -85,6 +89,10 @@ type DownloadAlbumOptions struct {
 	// Resize, when Enabled, re-encodes every downloaded file to JPEG via
 	// ImageMagick, optionally resizing it (see ResizeOptions).
 	Resize ResizeOptions
+	// ResizeVideo, when Enabled, re-encodes every downloaded VIDEO asset
+	// (--size original only) to MP4 via ffmpeg, per its Preset (see
+	// ResizeVideoOptions).
+	ResizeVideo ResizeVideoOptions
 	// TimestampPrefix prefixes each local file name with the asset's
 	// capture date/time ("yyyy-MM-dd_HH_mm_ss", from LocalDateTime) so a
 	// plain directory listing sorts chronologically.
@@ -180,6 +188,100 @@ func BuildImageMagickArgs(srcPath, dstPath string, opts ResizeOptions) []string 
 // error on failure for diagnosis.
 func RunImageMagickResize(ctx context.Context, srcPath, dstPath string, opts ResizeOptions) error {
 	args := BuildImageMagickArgs(srcPath, dstPath, opts)
+	cmd := exec.CommandContext(ctx, opts.ExecutablePath, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("running %s %s: %w: %s", opts.ExecutablePath, strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
+// ResizeVideoPreset1080pWebFriendly re-encodes a video to H.264/AAC MP4
+// scaled to fit 1080p height, tuned for broad web-player compatibility
+// (yuv420p, faststart for progressive playback) at a moderate size/quality
+// tradeoff (CRF 22, "medium" preset).
+const ResizeVideoPreset1080pWebFriendly = "1080p-web-friendly"
+
+// ValidResizeVideoPresets lists every accepted --resize-video-preset value,
+// used both for command-line validation and its help text.
+var ValidResizeVideoPresets = []string{ResizeVideoPreset1080pWebFriendly}
+
+// ResizeVideoOptions controls the optional ffmpeg re-encoding step applied
+// to VIDEO assets downloaded with --size original (see shouldResizeVideo —
+// thumbnails are always a static image, never a video stream, so this never
+// applies to --size thumbnail).
+type ResizeVideoOptions struct {
+	// Enabled turns the feature on. When false, Preset/ExecutablePath are
+	// ignored and downloaded videos keep their natural format.
+	Enabled bool
+	// Preset selects the ffmpeg encode recipe; must be one of
+	// ValidResizeVideoPresets.
+	Preset string
+	// ExecutablePath is the resolved ffmpeg binary — see ResolveFFmpegPath.
+	// Resolved once by the command layer before a batch starts (fail
+	// fast), not by this package.
+	ExecutablePath string
+}
+
+// resizeVideoPresetOf returns rv.Preset if rv.Enabled, or "" otherwise — the
+// canonical form stored in Manifest.ResizeVideoPreset and compared against
+// by PlanAlbumSync, so a manifest built without --resize-video-preset (""
+// preset) is distinguished from one built with any specific preset.
+func resizeVideoPresetOf(rv ResizeVideoOptions) string {
+	if !rv.Enabled {
+		return ""
+	}
+	return rv.Preset
+}
+
+// ResolveFFmpegPath returns the ffmpeg executable to invoke: explicit (from
+// the config file's tools.ffmpeg_path, or the IMMICH_FFMPEG_PATH env var —
+// see internal/config) if non-empty, otherwise "ffmpeg" found on PATH.
+// Meant to be called once before a download batch starts, so a missing
+// tool fails fast rather than partway through.
+func ResolveFFmpegPath(explicit string) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+	if p, err := exec.LookPath("ffmpeg"); err == nil {
+		return p, nil
+	}
+	return "", fmt.Errorf("ffmpeg executable not found: set tools.ffmpeg_path in the config file (or the IMMICH_FFMPEG_PATH env var), or install ffmpeg so it's on PATH")
+}
+
+// BuildFFmpegArgs returns the CLI arguments (excluding the executable
+// itself) to re-encode srcPath into dstPath per preset. Pure (no exec), so
+// the exact argument construction is directly unit-testable. -y (overwrite
+// without prompting) and -nostdin (never wait on keyboard input) are always
+// included since ffmpeg runs non-interactively here.
+func BuildFFmpegArgs(srcPath, dstPath, preset string) ([]string, error) {
+	switch preset {
+	case ResizeVideoPreset1080pWebFriendly:
+		return []string{
+			"-y", "-nostdin", "-hide_banner", "-loglevel", "error",
+			"-i", srcPath,
+			"-vf", "scale=-2:1080",
+			"-c:v", "libx264", "-preset", "medium", "-crf", "22",
+			"-pix_fmt", "yuv420p",
+			"-c:a", "aac", "-b:a", "128k",
+			"-movflags", "+faststart",
+			dstPath,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unknown --resize-video-preset %q (valid: %s)", preset, strings.Join(ValidResizeVideoPresets, ", "))
+	}
+}
+
+// RunFFmpegResize invokes opts.ExecutablePath to re-encode srcPath to
+// dstPath (always MP4) per opts.Preset. Stderr is captured (ffmpeg's own
+// progress/log output, quieted to errors only by -loglevel error in
+// BuildFFmpegArgs) and included in the error on failure for diagnosis.
+func RunFFmpegResize(ctx context.Context, srcPath, dstPath string, opts ResizeVideoOptions) error {
+	args, err := BuildFFmpegArgs(srcPath, dstPath, opts.Preset)
+	if err != nil {
+		return err
+	}
 	cmd := exec.CommandContext(ctx, opts.ExecutablePath, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -404,45 +506,76 @@ func shouldResize(resize ResizeOptions, size immichapi.AssetMediaSize, assetType
 	return assetType == immichapi.IMAGE
 }
 
+// shouldResizeVideo reports whether downloadAssetFile should run ffmpeg
+// against this asset's downloaded stream. GET /assets/{id}/thumbnail is
+// always a static preview image, never a video stream, even for a VIDEO
+// asset — so this only ever applies to --size original, and only for
+// Type == VIDEO. Pure (no network) so this decision is directly
+// unit-testable.
+func shouldResizeVideo(resizeVideo ResizeVideoOptions, size immichapi.AssetMediaSize, assetType immichapi.AssetTypeEnum) bool {
+	if !resizeVideo.Enabled {
+		return false
+	}
+	if size != immichapi.Original {
+		return false
+	}
+	return assetType == immichapi.VIDEO
+}
+
 // downloadAssetFile downloads one asset (original or thumbnail, per size)
 // to destBasePath + <extension>, and returns the full destination path
-// used. If shouldResize(resize, size, a.Type) is true, the downloaded file
-// is first saved to a temporary path, then re-encoded to
-// destBasePath+".jpg" via RunImageMagickResize, and the temporary file is
-// removed — so the returned path is "destBasePath.jpg" in that case.
-// Otherwise (resize disabled, or a non-image asset downloaded as
-// --size original) the file is saved as-is in its natural format.
-func downloadAssetFile(ctx context.Context, c *client.Client, a immichapi.AssetResponseDto, size immichapi.AssetMediaSize, destBasePath string, resize ResizeOptions) (string, error) {
+// used. Exactly one of shouldResize / shouldResizeVideo can ever be true
+// for a given asset (an asset's Type is never both IMAGE and VIDEO): if
+// shouldResize, the downloaded file is first saved to a temporary path,
+// then re-encoded to destBasePath+".jpg" via RunImageMagickResize; if
+// shouldResizeVideo, likewise re-encoded to destBasePath+".mp4" via
+// RunFFmpegResize. Either way the temporary file is removed afterwards.
+// Otherwise (both disabled, or this asset/size doesn't qualify — e.g. a
+// video downloaded as --size original with only --resize set) the file is
+// saved as-is in its natural format.
+func downloadAssetFile(ctx context.Context, c *client.Client, a immichapi.AssetResponseDto, size immichapi.AssetMediaSize, destBasePath string, resize ResizeOptions, resizeVideo ResizeVideoOptions) (string, error) {
 	body, ext, err := fetchAssetStream(ctx, c, a, size)
 	if err != nil {
 		return "", err
 	}
 	defer body.Close()
 
-	resizeThis := shouldResize(resize, size, a.Type)
+	resizeImage := shouldResize(resize, size, a.Type)
+	transcodeVideo := shouldResizeVideo(resizeVideo, size, a.Type)
 
 	rawPath := destBasePath + ext
-	if resizeThis {
+	if resizeImage || transcodeVideo {
 		// Download to a distinct temporary path so a same-extension source
 		// (e.g. an original that's already .jpg) never collides with the
-		// final resized output path.
+		// final output path.
 		rawPath = destBasePath + ".download-tmp" + ext
 	}
 	if err := writeAssetFile(rawPath, body); err != nil {
 		return "", err
 	}
 
-	if !resizeThis {
+	switch {
+	case resizeImage:
+		finalPath := destBasePath + ".jpg"
+		resizeErr := RunImageMagickResize(ctx, rawPath, finalPath, resize)
+		os.Remove(rawPath) // always clean up the temporary raw download
+		if resizeErr != nil {
+			return "", fmt.Errorf("resizing with ImageMagick: %w", resizeErr)
+		}
+		return finalPath, nil
+
+	case transcodeVideo:
+		finalPath := destBasePath + ".mp4"
+		resizeErr := RunFFmpegResize(ctx, rawPath, finalPath, resizeVideo)
+		os.Remove(rawPath) // always clean up the temporary raw download
+		if resizeErr != nil {
+			return "", fmt.Errorf("resizing with ffmpeg: %w", resizeErr)
+		}
+		return finalPath, nil
+
+	default:
 		return rawPath, nil
 	}
-
-	finalPath := destBasePath + ".jpg"
-	resizeErr := RunImageMagickResize(ctx, rawPath, finalPath, resize)
-	os.Remove(rawPath) // always clean up the temporary raw download
-	if resizeErr != nil {
-		return "", fmt.Errorf("resizing with ImageMagick: %w", resizeErr)
-	}
-	return finalPath, nil
 }
 
 func writeAssetFile(path string, r io.Reader) error {
@@ -486,7 +619,7 @@ func DownloadAlbum(ctx context.Context, c *client.Client, album immichapi.AlbumR
 		func(a immichapi.AssetResponseDto) string { return a.OriginalFileName },
 		func(a immichapi.AssetResponseDto) error {
 			base := filepath.Join(targetDir, names[a.Id.String()])
-			dest, err := downloadAssetFile(ctx, c, a, opts.Size, base, opts.Resize)
+			dest, err := downloadAssetFile(ctx, c, a, opts.Size, base, opts.Resize, opts.ResizeVideo)
 			if err != nil {
 				return err
 			}
@@ -575,6 +708,9 @@ func PlanAlbumSync(ctx context.Context, c *client.Client, album immichapi.AlbumR
 		if manifest.Resize != opts.Resize.Enabled {
 			return nil, SyncPlan{}, Manifest{}, fmt.Errorf("manifest in %q was created with --resize=%t, not %t — use a different --target-dir to switch", targetDir, manifest.Resize, opts.Resize.Enabled)
 		}
+		if manifest.ResizeVideoPreset != resizeVideoPresetOf(opts.ResizeVideo) {
+			return nil, SyncPlan{}, Manifest{}, fmt.Errorf("manifest in %q was created with --resize-video-preset=%q, not %q — use a different --target-dir to switch", targetDir, manifest.ResizeVideoPreset, resizeVideoPresetOf(opts.ResizeVideo))
+		}
 		if manifest.TimestampPrefix != opts.TimestampPrefix {
 			return nil, SyncPlan{}, Manifest{}, fmt.Errorf("manifest in %q was created with --timestamp-prefix=%t, not %t — use a different --target-dir to switch", targetDir, manifest.TimestampPrefix, opts.TimestampPrefix)
 		}
@@ -607,6 +743,7 @@ func ApplyAlbumSync(ctx context.Context, c *client.Client, album immichapi.Album
 	manifest.AlbumName = album.AlbumName
 	manifest.Size = opts.Size
 	manifest.Resize = opts.Resize.Enabled
+	manifest.ResizeVideoPreset = resizeVideoPresetOf(opts.ResizeVideo)
 	manifest.TimestampPrefix = opts.TimestampPrefix
 
 	for _, r := range plan.Removals {
@@ -627,7 +764,7 @@ func ApplyAlbumSync(ctx context.Context, c *client.Client, album immichapi.Album
 		func(a immichapi.AssetResponseDto) string { return a.OriginalFileName },
 		func(a immichapi.AssetResponseDto) error {
 			base := filepath.Join(targetDir, names[a.Id.String()])
-			dest, err := downloadAssetFile(ctx, c, a, opts.Size, base, opts.Resize)
+			dest, err := downloadAssetFile(ctx, c, a, opts.Size, base, opts.Resize, opts.ResizeVideo)
 			if err != nil {
 				return err
 			}

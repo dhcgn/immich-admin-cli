@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -1202,9 +1203,10 @@ func downloadAlbumCommand() *cli.Command {
 			"With --sync, a hidden manifest (.immich-album-sync.json) is kept in --target-dir to detect assets " +
 			"that changed (re-downloaded) or left the album (local file deleted) on later runs; files not " +
 			"tracked in the manifest are never touched. --timestamp-prefix prefixes each file name with the " +
-			"asset's capture date/time for chronological sorting. --resize re-encodes every downloaded file to " +
-			"JPEG via ImageMagick, optionally resized (--resize-width/--resize-height) and at a given quality " +
-			"(--resize-quality).",
+			"asset's capture date/time for chronological sorting. --resize re-encodes every downloaded IMAGE " +
+			"file to JPEG via ImageMagick, optionally resized (--resize-width/--resize-height) and at a given " +
+			"quality (--resize-quality). --resize-video-preset re-encodes every downloaded VIDEO original via " +
+			"ffmpeg using a named preset.",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:  "album-id",
@@ -1253,6 +1255,10 @@ func downloadAlbumCommand() *cli.Command {
 				Usage: "JPEG quality 1-100 (requires --resize)",
 				Value: workflows.DefaultResizeQuality,
 			},
+			&cli.StringFlag{
+				Name:  "resize-video-preset",
+				Usage: fmt.Sprintf("re-encode every downloaded VIDEO original using ffmpeg (path from config tools.ffmpeg_path or IMMICH_FFMPEG_PATH, falling back to PATH); valid presets: %s", strings.Join(workflows.ValidResizeVideoPresets, ", ")),
+			},
 			&cli.BoolFlag{
 				Name:  "dry-run",
 				Usage: "print the planned downloads/deletions without changing anything",
@@ -1264,6 +1270,21 @@ func downloadAlbumCommand() *cli.Command {
 		},
 		Action: clientWorkflowDownloadAlbum,
 	}
+}
+
+// validateResizeVideoPreset checks --resize-video-preset against
+// workflows.ValidResizeVideoPresets without touching the filesystem or
+// environment (resolving ffmpeg is a separate, later step), so it's
+// directly unit-testable. An empty raw value means the feature is disabled
+// (valid).
+func validateResizeVideoPreset(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	if slices.Contains(workflows.ValidResizeVideoPresets, raw) {
+		return nil
+	}
+	return fmt.Errorf("invalid --resize-video-preset %q: valid presets: %s", raw, strings.Join(workflows.ValidResizeVideoPresets, ", "))
 }
 
 // validateResizeFlags checks --resize-width/--resize-height/--resize-quality
@@ -1326,6 +1347,25 @@ func clientWorkflowDownloadAlbum(ctx context.Context, cmd *cli.Command) error {
 		resizeOpts.ExecutablePath = execPath
 	}
 
+	resizeVideoPreset := cmd.String("resize-video-preset")
+	if err := validateResizeVideoPreset(resizeVideoPreset); err != nil {
+		return err
+	}
+	resizeVideoOpts := workflows.ResizeVideoOptions{Enabled: resizeVideoPreset != "", Preset: resizeVideoPreset}
+	if resizeVideoOpts.Enabled {
+		// Resolved once, before any download starts (fail fast), same as
+		// ImageMagick above.
+		cfg, err := config.Load(cmd.String("config"))
+		if err != nil {
+			return err
+		}
+		execPath, err := workflows.ResolveFFmpegPath(cfg.Tools.FFmpegPath)
+		if err != nil {
+			return err
+		}
+		resizeVideoOpts.ExecutablePath = execPath
+	}
+
 	var albumID *openapi_types.UUID
 	if albumIDStr != "" {
 		id, err := uuid.Parse(albumIDStr)
@@ -1355,6 +1395,7 @@ func clientWorkflowDownloadAlbum(ctx context.Context, cmd *cli.Command) error {
 		IgnoreVideos:    cmd.Bool("ignore-videos"),
 		DryRun:          dryRun,
 		Resize:          resizeOpts,
+		ResizeVideo:     resizeVideoOpts,
 		TimestampPrefix: cmd.Bool("timestamp-prefix"),
 	}
 

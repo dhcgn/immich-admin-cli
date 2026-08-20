@@ -258,7 +258,7 @@ Mirrors exactly one album into a local folder — the full originals, or just th
 1. **Resolve** the album from `--album-id` or `--album-name` (`GET /albums`/`GET /albums/{id}`) — a name must resolve to exactly one album, or the command lists every match and asks you to use `--album-id` instead
 2. **Fetch** the album's assets (`POST /search/metadata`, filtered by album), optionally dropping videos (`--ignore-videos`)
 3. **Download** each asset as either the full original (`GET /assets/{id}/original`) or its thumbnail (`GET /assets/{id}/thumbnail`, `--size thumbnail`) into `--target-dir`, named after the asset's own original file name (duplicate names within an album get a short, deterministic asset-ID suffix), optionally prefixed with its capture date/time (`--timestamp-prefix`)
-4. **Optionally resize** (`--resize`) each downloaded file to JPEG via ImageMagick, before it's written to its final name
+4. **Optionally resize images** (`--resize`) to JPEG via ImageMagick, or **re-encode videos** (`--resize-video-preset`) via ffmpeg, before the file is written to its final name
 
 Without `--sync` this is a simple one-shot bulk download: every matching asset is (re-)downloaded, always overwriting whatever is already there.
 
@@ -269,13 +269,20 @@ With `--sync`, a hidden manifest (`.immich-album-sync.json`) is kept in `--targe
 - assets whose checksum is unchanged are skipped (**unchanged**)
 - manifest entries whose asset is no longer in the (filtered) album have their local file **deleted**
 
-Only files this tool itself downloaded (tracked in the manifest) are ever touched or deleted — anything else you put in the target folder is left alone. Change detection compares the *original* asset's checksum even in `--size thumbnail` mode (Immich exposes no separate thumbnail checksum, and a thumbnail is derived deterministically from the original), so a metadata-only edit that doesn't change the original file's bytes (e.g. a pure EXIF rotation) won't trigger a thumbnail re-download. The manifest also records which album, `--size`, `--resize`, and `--timestamp-prefix` it was built with; pointing `--sync` at a folder whose manifest doesn't match any of those for the current run is refused rather than risk deleting/misnaming files or mixing conventions — use a fresh `--target-dir` to switch.
+Only files this tool itself downloaded (tracked in the manifest) are ever touched or deleted — anything else you put in the target folder is left alone. Change detection compares the *original* asset's checksum even in `--size thumbnail` mode (Immich exposes no separate thumbnail checksum, and a thumbnail is derived deterministically from the original), so a metadata-only edit that doesn't change the original file's bytes (e.g. a pure EXIF rotation) won't trigger a thumbnail re-download. The manifest also records which album, `--size`, `--resize`, `--resize-video-preset`, and `--timestamp-prefix` it was built with; pointing `--sync` at a folder whose manifest doesn't match any of those for the current run is refused rather than risk deleting/misnaming files or mixing conventions — use a fresh `--target-dir` to switch.
 
 **`--timestamp-prefix`** prefixes each local file name with the asset's capture date/time (from its `LocalDateTime` metadata), formatted `yyyy-MM-dd_HH_mm_ss` (e.g. `2025-07-04_14_04_02_IMG_1234.jpg`), so a plain directory listing sorts chronologically. Assets that still collide after the prefix (e.g. burst shots within the same second) get the same short asset-ID suffix as the no-prefix case.
 
 **`--resize`** re-encodes every downloaded file to JPEG using [ImageMagick](https://imagemagick.org/), regardless of the source format (useful when local disk/transfer size matters more than preserving the exact original format — see `--size thumbnail` for an even smaller alternative). It requires the `magick` (v7+) or `convert` (legacy v6) executable, resolved in this order: `tools.imagemagick_path` in the config file, the `IMMICH_IMAGEMAGICK_PATH` environment variable, then a `PATH` lookup — checked once before any download starts, so a missing tool fails fast. `--resize-width`/`--resize-height` (pixels, either or both; 0 means unconstrained on that axis — ImageMagick fits the image within the box, preserving aspect ratio) control the target size, and `--resize-quality` (1-100, default 85) controls JPEG quality; omitting both width and height just re-encodes/re-compresses without changing dimensions.
 
 > ⚠️ **`--resize` only ever runs against actual image content**, never a video's real file: with `--size original`, non-`IMAGE` assets (videos, audio, anything else) are saved as-is, untouched, because running ImageMagick against a video file treats it as a sequence of frames and would either fail or silently produce one JPEG per frame. With `--size thumbnail`, resize always applies — the thumbnail endpoint always returns a static preview image, even for a video asset. Combine `--resize` with `--ignore-videos` if you want every downloaded file to actually be resized.
+
+**`--resize-video-preset PRESET`** re-encodes every downloaded `--size original` **VIDEO** asset via [ffmpeg](https://ffmpeg.org/), resolved the same way as ImageMagick above: `tools.ffmpeg_path` in the config file, the `IMMICH_FFMPEG_PATH` environment variable, then a `PATH` lookup, checked once before any download starts. It only ever applies to `Type == VIDEO` assets downloaded as `--size original` — images are untouched by it (use `--resize` for those), and it never applies to `--size thumbnail` (a thumbnail is always a static preview image, never a video stream). The output is always MP4. Currently one preset is available:
+
+- **`1080p-web-friendly`**: scales to fit 1080p height (preserving aspect ratio), H.264 video (CRF 22, `medium` preset) + AAC audio (128k), `yuv420p` pixel format and `+faststart`, for broad web/player compatibility — equivalent to:
+  ```sh
+  ffmpeg -i input.mkv -vf "scale=-2:1080" -c:v libx264 -preset medium -crf 22 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart output-1080p.mp4
+  ```
 
 ```sh
 # One-shot download of every original in an album
@@ -290,12 +297,15 @@ immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./g
 # Resize every downloaded photo to fit within 1920x1080, re-encoded to JPEG at quality 80
 immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten-1080p --resize --resize-width 1920 --resize-height 1080 --resize-quality 80
 
+# Re-encode every downloaded video to a web-friendly 1080p MP4 (photos untouched)
+immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten-web --resize-video-preset 1080p-web-friendly
+
 # Keep a folder mirrored to the album going forward
 immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten --sync --dry-run
 immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten --sync --yes
 ```
 
-Flags: exactly one of `--album-id UUID` / `--album-name NAME`, `--target-dir DIR` (required), `--size original|thumbnail` (default `original`), `--ignore-videos`, `--timestamp-prefix`, `--resize`, `--resize-width PIXELS`, `--resize-height PIXELS`, `--resize-quality 1-100` (default `85`; the latter three require `--resize`), `--sync`, `--dry-run`, `--yes` (skip the confirmation prompt before `--sync` deletes local files).
+Flags: exactly one of `--album-id UUID` / `--album-name NAME`, `--target-dir DIR` (required), `--size original|thumbnail` (default `original`), `--ignore-videos`, `--timestamp-prefix`, `--resize`, `--resize-width PIXELS`, `--resize-height PIXELS`, `--resize-quality 1-100` (default `85`; the latter three require `--resize`), `--resize-video-preset PRESET` (currently only `1080p-web-friendly`), `--sync`, `--dry-run`, `--yes` (skip the confirmation prompt before `--sync` deletes local files).
 
 The underlying operations are also available standalone: `assets download-original` and the new `assets download-thumbnail` (`GET /assets/{id}/thumbnail`, supporting the full `original|fullsize|preview|thumbnail` `AssetMediaSize` range plus `--edited`).
 

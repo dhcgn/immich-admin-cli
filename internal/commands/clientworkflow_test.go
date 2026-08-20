@@ -289,6 +289,26 @@ func TestValidateResizeFlags(t *testing.T) {
 	}
 }
 
+func TestValidateResizeVideoPreset(t *testing.T) {
+	tests := []struct {
+		raw     string
+		wantErr bool
+	}{
+		{raw: "", wantErr: false},
+		{raw: workflows.ResizeVideoPreset1080pWebFriendly, wantErr: false},
+		{raw: "bogus-preset", wantErr: true},
+		{raw: "1080p-web-friendly ", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.raw, func(t *testing.T) {
+			err := validateResizeVideoPreset(tc.raw)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("validateResizeVideoPreset(%q) error = %v, wantErr %v", tc.raw, err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestPrintDownloadAlbumSyncPlan(t *testing.T) {
 	album := testAlbum("Vacation")
 	plan := workflows.SyncPlan{

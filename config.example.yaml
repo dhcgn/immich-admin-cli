@@ -14,3 +14,6 @@ api_key: YOUR_API_KEY_HERE
 #   # modern unified "magick" (ImageMagick v7+) or the legacy "convert"
 #   # (v6) executable. Env var: IMMICH_IMAGEMAGICK_PATH
 #   imagemagick_path: /usr/bin/magick
+#   # Used by `client-workflow download-album --resize-video-preset`.
+#   # Env var: IMMICH_FFMPEG_PATH
+#   ffmpeg_path: /usr/bin/ffmpeg
