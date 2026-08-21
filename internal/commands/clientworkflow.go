@@ -1182,13 +1182,20 @@ func validateDownloadAlbumAlbumFlags(albumIDStr, albumName string) error {
 	return nil
 }
 
-// resolveDownloadAlbumSize validates the --size flag value, restricted to
-// the two media variants download-album supports (unlike download-thumbnail,
-// which exposes the full AssetMediaSize enum).
+// resolveDownloadAlbumSize validates the --size flag value against the full
+// AssetMediaSize enum (fullsize, original, preview, thumbnail).
+// "original" is accepted here even though the OpenAPI spec deprecates
+// size=original on GET /assets/{id}/thumbnail ("Use the original endpoint
+// directly instead"): download-album's workflow layer special-cases
+// original to the dedicated GET /assets/{id}/original endpoint (see
+// fetchAssetStream) and never sends size=original to the thumbnail
+// endpoint, so it is exempt from that deprecation. Contrast with
+// download-thumbnail, a thin direct wrapper over the thumbnail endpoint,
+// which rejects "original" for exactly this reason.
 func resolveDownloadAlbumSize(raw string) (immichapi.AssetMediaSize, error) {
 	size := immichapi.AssetMediaSize(raw)
-	if size != immichapi.Original && size != immichapi.Thumbnail {
-		return "", fmt.Errorf("invalid --size %q: must be %q or %q", raw, immichapi.Original, immichapi.Thumbnail)
+	if !size.Valid() {
+		return "", fmt.Errorf("invalid --size %q: must be one of %q, %q, %q, %q", raw, immichapi.Original, immichapi.Fullsize, immichapi.Preview, immichapi.Thumbnail)
 	}
 	return size, nil
 }
@@ -1196,10 +1203,11 @@ func resolveDownloadAlbumSize(raw string) (immichapi.AssetMediaSize, error) {
 func downloadAlbumCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "download-album",
-		Usage: "Download all original files or all thumbnails from one album into a local folder, optionally kept in sync",
+		Usage: "Download all original files or a smaller variant (preview/thumbnail/fullsize) from one album into a local folder, optionally kept in sync",
 		Description: "Downloads every asset in exactly one album (--album-id or --album-name) into --target-dir, " +
-			"as either the full original file or its small thumbnail (--size), optionally skipping videos " +
-			"(--ignore-videos). Without --sync this is a plain one-shot bulk download that always overwrites. " +
+			"as either the full original file or a smaller variant (--size original|fullsize|preview|thumbnail, " +
+			"default preview), optionally skipping videos (--ignore-videos). Without --sync this is a plain " +
+			"one-shot bulk download that always overwrites. " +
 			"With --sync, a hidden manifest (.immich-album-sync.json) is kept in --target-dir to detect assets " +
 			"that changed (re-downloaded) or left the album (local file deleted) on later runs; files not " +
 			"tracked in the manifest are never touched. --timestamp-prefix prefixes each file name with the " +
@@ -1223,8 +1231,8 @@ func downloadAlbumCommand() *cli.Command {
 			},
 			&cli.StringFlag{
 				Name:  "size",
-				Usage: "media variant to download: original or thumbnail",
-				Value: string(immichapi.Original),
+				Usage: "media variant to download: original, fullsize, preview, or thumbnail (see the AssetMediaSize spec enum)",
+				Value: string(immichapi.Preview),
 			},
 			&cli.BoolFlag{
 				Name:  "ignore-videos",
@@ -1257,7 +1265,7 @@ func downloadAlbumCommand() *cli.Command {
 			},
 			&cli.StringFlag{
 				Name:  "resize-video-preset",
-				Usage: fmt.Sprintf("re-encode every downloaded VIDEO original using ffmpeg (path from config tools.ffmpeg_path or IMMICH_FFMPEG_PATH, falling back to PATH); valid presets: %s", strings.Join(workflows.ValidResizeVideoPresets, ", ")),
+				Usage: fmt.Sprintf("re-encode every downloaded VIDEO asset using ffmpeg (path from config tools.ffmpeg_path or IMMICH_FFMPEG_PATH, falling back to PATH); videos are always fetched at --size original for this regardless of --size (many videos have no usable preview/thumbnail rendition, and ffmpeg needs the real stream anyway) — only non-video assets use --size; valid presets: %s", strings.Join(workflows.ValidResizeVideoPresets, ", ")),
 			},
 			&cli.BoolFlag{
 				Name:  "dry-run",
@@ -1380,6 +1388,20 @@ func clientWorkflowDownloadAlbum(ctx context.Context, cmd *cli.Command) error {
 	sync := cmd.Bool("sync")
 	yes := cmd.Bool("yes")
 
+	opts := workflows.DownloadAlbumOptions{
+		Size:            size,
+		IgnoreVideos:    cmd.Bool("ignore-videos"),
+		DryRun:          dryRun,
+		Resize:          resizeOpts,
+		ResizeVideo:     resizeVideoOpts,
+		TimestampPrefix: cmd.Bool("timestamp-prefix"),
+	}
+
+	// Printed before any network activity (newClient/ResolveAlbum below),
+	// so the user always sees it up front, even if the run later fails to
+	// reach the server.
+	printDownloadSizePlan(opts)
+
 	c, err := newClient(ctx, cmd)
 	if err != nil {
 		return err
@@ -1388,15 +1410,6 @@ func clientWorkflowDownloadAlbum(ctx context.Context, cmd *cli.Command) error {
 	album, err := workflows.ResolveAlbum(ctx, c, albumID, albumName)
 	if err != nil {
 		return err
-	}
-
-	opts := workflows.DownloadAlbumOptions{
-		Size:            size,
-		IgnoreVideos:    cmd.Bool("ignore-videos"),
-		DryRun:          dryRun,
-		Resize:          resizeOpts,
-		ResizeVideo:     resizeVideoOpts,
-		TimestampPrefix: cmd.Bool("timestamp-prefix"),
 	}
 
 	if !sync {
@@ -1428,6 +1441,26 @@ func clientWorkflowDownloadAlbum(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	return workflows.ApplyAlbumSync(ctx, c, album, targetDir, assets, plan, manifest, opts)
+}
+
+// printDownloadSizePlan prints a short, upfront summary of which media
+// variant each asset kind will be downloaded as for a download-album run,
+// so it's clear before any network activity starts — in particular that
+// VIDEO assets always use --size original when --resize-video-preset is
+// set (see effectiveSize in the workflows package for why), regardless of
+// --size for every other asset. Printed once per run, for both plain and
+// --sync mode, and regardless of --dry-run.
+func printDownloadSizePlan(opts workflows.DownloadAlbumOptions) {
+	fmt.Printf("Download plan: --size %s for photo/other assets\n", opts.Size)
+	switch {
+	case opts.ResizeVideo.Enabled:
+		fmt.Printf("  videos: downloaded as %s and re-encoded to MP4 via --resize-video-preset %s (regardless of --size above)\n", immichapi.Original, opts.ResizeVideo.Preset)
+	case opts.Size != immichapi.Original:
+		fmt.Printf("  videos: downloaded as a static preview image (--size %s), NOT the real video — pass --size original or --resize-video-preset to get actual video content\n", opts.Size)
+	}
+	if opts.Resize.Enabled {
+		fmt.Printf("  images: re-encoded to JPEG via --resize (quality %d)\n", opts.Resize.Quality)
+	}
 }
 
 // printDownloadAlbumSyncPlan prints a summary of a `download-album --sync`

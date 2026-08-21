@@ -253,11 +253,11 @@ Flags: `--dry-run`, `--offset-days N` (default `2`; allow assets up to N days be
 
 ### `client-workflow download-album`
 
-Mirrors exactly one album into a local folder — the full originals, or just the small thumbnails when file size matters (e.g. copying a huge album to a phone or a size-limited drive):
+Mirrors exactly one album into a local folder — the full originals, or a smaller variant (`preview` by default, or `fullsize`/`thumbnail`) when file size matters (e.g. copying a huge album to a phone or a size-limited drive):
 
 1. **Resolve** the album from `--album-id` or `--album-name` (`GET /albums`/`GET /albums/{id}`) — a name must resolve to exactly one album, or the command lists every match and asks you to use `--album-id` instead
 2. **Fetch** the album's assets (`POST /search/metadata`, filtered by album), optionally dropping videos (`--ignore-videos`)
-3. **Download** each asset as either the full original (`GET /assets/{id}/original`) or its thumbnail (`GET /assets/{id}/thumbnail`, `--size thumbnail`) into `--target-dir`, named after the asset's own original file name (duplicate names within an album get a short, deterministic asset-ID suffix), optionally prefixed with its capture date/time (`--timestamp-prefix`)
+3. **Download** each asset as either the full original (`GET /assets/{id}/original`, `--size original`) or a smaller variant (`GET /assets/{id}/thumbnail`, `--size fullsize|preview|thumbnail`; default `preview`, a 1920px-wide image — `thumbnail` is only 250px wide and rarely useful) into `--target-dir`, named after the asset's own original file name (duplicate names within an album get a short, deterministic asset-ID suffix), optionally prefixed with its capture date/time (`--timestamp-prefix`)
 4. **Optionally resize images** (`--resize`) to JPEG via ImageMagick, or **re-encode videos** (`--resize-video-preset`) via ffmpeg, before the file is written to its final name
 
 Since downloading (and especially resizing/re-encoding) many large assets can take a long time, a progress line is printed to stderr before each asset starts — `[i/N  P%] elapsed .., eta ..: filename` — so you can see how far along the batch is and roughly how much longer it will take; the ETA is a simple running average over completed items, so it firms up as the batch progresses.
@@ -271,7 +271,7 @@ With `--sync`, a hidden manifest (`.immich-album-sync.json`) is kept in `--targe
 - assets whose checksum is unchanged are skipped (**unchanged**)
 - manifest entries whose asset is no longer in the (filtered) album have their local file **deleted**
 
-Only files this tool itself downloaded (tracked in the manifest) are ever touched or deleted — anything else you put in the target folder is left alone. Change detection compares the *original* asset's checksum even in `--size thumbnail` mode (Immich exposes no separate thumbnail checksum, and a thumbnail is derived deterministically from the original), so a metadata-only edit that doesn't change the original file's bytes (e.g. a pure EXIF rotation) won't trigger a thumbnail re-download. The manifest also records which album, `--size`, `--resize`, `--resize-video-preset`, and `--timestamp-prefix` it was built with; pointing `--sync` at a folder whose manifest doesn't match any of those for the current run is refused rather than risk deleting/misnaming files or mixing conventions — use a fresh `--target-dir` to switch.
+Only files this tool itself downloaded (tracked in the manifest) are ever touched or deleted — anything else you put in the target folder is left alone. Change detection compares the *original* asset's checksum even in a non-`original` `--size` mode (Immich exposes no separate checksum for the fullsize/preview/thumbnail variants, and each is derived deterministically from the original), so a metadata-only edit that doesn't change the original file's bytes (e.g. a pure EXIF rotation) won't trigger a re-download. The manifest also records which album, `--size`, `--resize`, `--resize-video-preset`, and `--timestamp-prefix` it was built with; pointing `--sync` at a folder whose manifest doesn't match any of those for the current run is refused rather than risk deleting/misnaming files or mixing conventions — use a fresh `--target-dir` to switch.
 
 > 💡 **Interrupted runs (Ctrl+C, crash, closed terminal) are safe to resume.** The manifest is written to disk (atomically — a temp file + rename, never a half-written file) after *every single* asset added, updated, or removed, not just once at the end — so an interrupted `--sync` run never loses more than the one item that was in flight; every file already downloaded or removed before the interruption is correctly reflected, and simply running the same command again picks up where it left off. If `--resize`/`--resize-video-preset` was converting a file at the moment of interruption, its raw pre-conversion download (named `<file>.download-tmp.<ext>`) is left behind; the next run detects and removes any such leftover automatically before starting.
 
@@ -279,9 +279,14 @@ Only files this tool itself downloaded (tracked in the manifest) are ever touche
 
 **`--resize`** re-encodes every downloaded file to JPEG using [ImageMagick](https://imagemagick.org/), regardless of the source format (useful when local disk/transfer size matters more than preserving the exact original format — see `--size thumbnail` for an even smaller alternative). It requires the `magick` (v7+) or `convert` (legacy v6) executable, resolved in this order: `tools.imagemagick_path` in the config file, the `IMMICH_IMAGEMAGICK_PATH` environment variable, then a `PATH` lookup — checked once before any download starts, so a missing tool fails fast. `--resize-width`/`--resize-height` (pixels, either or both; 0 means unconstrained on that axis — ImageMagick fits the image within the box, preserving aspect ratio) control the target size, and `--resize-quality` (1-100, default 85) controls JPEG quality; omitting both width and height just re-encodes/re-compresses without changing dimensions.
 
-> ⚠️ **`--resize` only ever runs against actual image content**, never a video's real file: with `--size original`, non-`IMAGE` assets (videos, audio, anything else) are saved as-is, untouched, because running ImageMagick against a video file treats it as a sequence of frames and would either fail or silently produce one JPEG per frame. With `--size thumbnail`, resize always applies — the thumbnail endpoint always returns a static preview image, even for a video asset. Combine `--resize` with `--ignore-videos` if you want every downloaded file to actually be resized.
+> ⚠️ **`--resize` only ever runs against actual image content**, never a video's real file: with `--size original`, non-`IMAGE` assets (videos, audio, anything else) are saved as-is, untouched, because running ImageMagick against a video file treats it as a sequence of frames and would either fail or silently produce one JPEG per frame. With `--size fullsize`/`preview`/`thumbnail`, resize always applies — the thumbnail endpoint always returns a static preview image, even for a video asset. Combine `--resize` with `--ignore-videos` if you want every downloaded file to actually be resized.
 
-**`--resize-video-preset PRESET`** re-encodes every downloaded `--size original` **VIDEO** asset via [ffmpeg](https://ffmpeg.org/), resolved the same way as ImageMagick above: `tools.ffmpeg_path` in the config file, the `IMMICH_FFMPEG_PATH` environment variable, then a `PATH` lookup, checked once before any download starts. It only ever applies to `Type == VIDEO` assets downloaded as `--size original` — images are untouched by it (use `--resize` for those), and it never applies to `--size thumbnail` (a thumbnail is always a static preview image, never a video stream). The output is always MP4. Currently one preset is available:
+**`--resize-video-preset PRESET`** re-encodes every downloaded **VIDEO** asset via [ffmpeg](https://ffmpeg.org/), resolved the same way as ImageMagick above: `tools.ffmpeg_path` in the config file, the `IMMICH_FFMPEG_PATH` environment variable, then a `PATH` lookup, checked once before any download starts. Setting it changes how **VIDEO** assets specifically are fetched, regardless of `--size`: since many videos have no usable `fullsize`/`preview`/`thumbnail` rendition at all (and ffmpeg needs the real stream to transcode anyway), every `VIDEO` asset is always downloaded at `--size original` and re-encoded to MP4 when `--resize-video-preset` is set — every other asset (photos, etc.) still uses whatever `--size` you configured (`preview` by default). Images are untouched by this flag (use `--resize` for those). A short summary of this behavior is printed at the start of every run, before any download begins, e.g.:
+```
+Download plan: --size preview for photo/other assets
+  videos: downloaded as original and re-encoded to MP4 via --resize-video-preset 1080p-web-friendly (regardless of --size above)
+```
+The output is always MP4. Currently one preset is available:
 
 - **`1080p-web-friendly`**: scales to fit 1080p height (preserving aspect ratio), H.264 video (CRF 22, `medium` preset) + AAC audio (128k), `yuv420p` pixel format and `+faststart`, for broad web/player compatibility — equivalent to:
   ```sh
@@ -290,28 +295,28 @@ Only files this tool itself downloaded (tracked in the manifest) are ever touche
 
 ```sh
 # One-shot download of every original in an album
-immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten
+immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten --size original
 
-# Thumbnails only (smaller footprint), skipping videos
-immich-admin cw download-album --album-id d4856b75-7700-414c-9dc2-4f6d501936d1 --target-dir ./garten-thumbs --size thumbnail --ignore-videos
+# Preview-size copies (smaller footprint, still usable — this is the default), skipping videos
+immich-admin cw download-album --album-id d4856b75-7700-414c-9dc2-4f6d501936d1 --target-dir ./garten-previews --ignore-videos
 
 # Chronologically-sortable file names
-immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten --timestamp-prefix
+immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten --size original --timestamp-prefix
 
 # Resize every downloaded photo to fit within 1920x1080, re-encoded to JPEG at quality 80
-immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten-1080p --resize --resize-width 1920 --resize-height 1080 --resize-quality 80
+immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten-1080p --size original --resize --resize-width 1920 --resize-height 1080 --resize-quality 80
 
-# Re-encode every downloaded video to a web-friendly 1080p MP4 (photos untouched)
+# Re-encode every downloaded video to a web-friendly 1080p MP4; photos still use the default preview size
 immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten-web --resize-video-preset 1080p-web-friendly
 
 # Keep a folder mirrored to the album going forward
-immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten --sync --dry-run
-immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten --sync --yes
+immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten --size original --sync --dry-run
+immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./garten --size original --sync --yes
 ```
 
-Flags: exactly one of `--album-id UUID` / `--album-name NAME`, `--target-dir DIR` (required), `--size original|thumbnail` (default `original`), `--ignore-videos`, `--timestamp-prefix`, `--resize`, `--resize-width PIXELS`, `--resize-height PIXELS`, `--resize-quality 1-100` (default `85`; the latter three require `--resize`), `--resize-video-preset PRESET` (currently only `1080p-web-friendly`), `--sync`, `--dry-run`, `--yes` (skip the confirmation prompt before `--sync` deletes local files).
+Flags: exactly one of `--album-id UUID` / `--album-name NAME`, `--target-dir DIR` (required), `--size original|fullsize|preview|thumbnail` (default `preview`), `--ignore-videos`, `--timestamp-prefix`, `--resize`, `--resize-width PIXELS`, `--resize-height PIXELS`, `--resize-quality 1-100` (default `85`; the latter three require `--resize`), `--resize-video-preset PRESET` (currently only `1080p-web-friendly`), `--sync`, `--dry-run`, `--yes` (skip the confirmation prompt before `--sync` deletes local files).
 
-The underlying operations are also available standalone: `assets download-original` and the new `assets download-thumbnail` (`GET /assets/{id}/thumbnail`, supporting the full `original|fullsize|preview|thumbnail` `AssetMediaSize` range plus `--edited`).
+The underlying operations are also available standalone: `assets download-original` and `assets download-thumbnail` (`GET /assets/{id}/thumbnail`, supporting `fullsize|preview|thumbnail`, default `preview`, plus `--edited`; `original` is not accepted here — the OpenAPI spec deprecates `size=original` on this endpoint in favor of `assets download-original`).
 
 ## Sample Use Cases
 
