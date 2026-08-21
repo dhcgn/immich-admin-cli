@@ -24,3 +24,4 @@ config*.yaml
 
 # Downloaded asset output (e.g. `assets download-original --out-dir out`)
 /out/
+log.txt

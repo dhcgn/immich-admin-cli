@@ -241,8 +241,8 @@ func TestResolveDownloadAlbumSize(t *testing.T) {
 	}{
 		{raw: "original", want: immichapi.Original},
 		{raw: "thumbnail", want: immichapi.Thumbnail},
-		{raw: "preview", wantErr: true},
-		{raw: "fullsize", wantErr: true},
+		{raw: "preview", want: immichapi.Preview},
+		{raw: "fullsize", want: immichapi.Fullsize},
 		{raw: "", wantErr: true},
 		{raw: "bogus", wantErr: true},
 	}
@@ -304,6 +304,61 @@ func TestValidateResizeVideoPreset(t *testing.T) {
 			err := validateResizeVideoPreset(tc.raw)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("validateResizeVideoPreset(%q) error = %v, wantErr %v", tc.raw, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestPrintDownloadSizePlan(t *testing.T) {
+	tests := []struct {
+		name     string
+		opts     workflows.DownloadAlbumOptions
+		want     []string
+		dontWant []string
+	}{
+		{
+			name: "preview only, no resize",
+			opts: workflows.DownloadAlbumOptions{Size: immichapi.Preview},
+			want: []string{"--size preview for photo/other assets", "videos: downloaded as a static preview image (--size preview)"},
+		},
+		{
+			name:     "original size, no resize: no video caveat needed",
+			opts:     workflows.DownloadAlbumOptions{Size: immichapi.Original},
+			want:     []string{"--size original for photo/other assets"},
+			dontWant: []string{"videos:"},
+		},
+		{
+			name: "preview + resize-video-preset: videos always go original+transcode",
+			opts: workflows.DownloadAlbumOptions{Size: immichapi.Preview, ResizeVideo: workflows.ResizeVideoOptions{Enabled: true, Preset: workflows.ResizeVideoPreset1080pWebFriendly}},
+			want: []string{"--size preview for photo/other assets", "videos: downloaded as original and re-encoded to MP4 via --resize-video-preset 1080p-web-friendly"},
+		},
+		{
+			name: "resize enabled",
+			opts: workflows.DownloadAlbumOptions{Size: immichapi.Preview, Resize: workflows.ResizeOptions{Enabled: true, Quality: 80}},
+			want: []string{"images: re-encoded to JPEG via --resize (quality 80)"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			oldStdout := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+			printDownloadSizePlan(tc.opts)
+			w.Close()
+			os.Stdout = oldStdout
+			buf.ReadFrom(r)
+			out := buf.String()
+
+			for _, want := range tc.want {
+				if !strings.Contains(out, want) {
+					t.Errorf("printDownloadSizePlan(%+v) output missing %q, got: %q", tc.opts, want, out)
+				}
+			}
+			for _, dontWant := range tc.dontWant {
+				if strings.Contains(out, dontWant) {
+					t.Errorf("printDownloadSizePlan(%+v) output should not contain %q, got: %q", tc.opts, dontWant, out)
+				}
 			}
 		})
 	}
