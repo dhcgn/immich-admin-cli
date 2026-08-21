@@ -360,6 +360,11 @@ func TestShouldResize(t *testing.T) {
 		{name: "enabled, thumbnail, video: thumbnail is always a static image", resize: enabled, size: immichapi.Thumbnail, assetType: immichapi.VIDEO, want: true},
 		{name: "enabled, thumbnail, image", resize: enabled, size: immichapi.Thumbnail, assetType: immichapi.IMAGE, want: true},
 		{name: "disabled, thumbnail, image", resize: disabled, size: immichapi.Thumbnail, assetType: immichapi.IMAGE, want: false},
+		{name: "enabled, preview, video: preview is always a static image", resize: enabled, size: immichapi.Preview, assetType: immichapi.VIDEO, want: true},
+		{name: "enabled, preview, image", resize: enabled, size: immichapi.Preview, assetType: immichapi.IMAGE, want: true},
+		{name: "disabled, preview, image", resize: disabled, size: immichapi.Preview, assetType: immichapi.IMAGE, want: false},
+		{name: "enabled, fullsize, video: fullsize is always a static image", resize: enabled, size: immichapi.Fullsize, assetType: immichapi.VIDEO, want: true},
+		{name: "enabled, fullsize, image", resize: enabled, size: immichapi.Fullsize, assetType: immichapi.IMAGE, want: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -417,11 +422,40 @@ func TestShouldResizeVideo(t *testing.T) {
 		{name: "enabled, original, video", resizeVideo: enabled, size: immichapi.Original, assetType: immichapi.VIDEO, want: true},
 		{name: "enabled, original, image: never transcode a real image as video", resizeVideo: enabled, size: immichapi.Original, assetType: immichapi.IMAGE, want: false},
 		{name: "enabled, thumbnail, video: thumbnail is never a video stream", resizeVideo: enabled, size: immichapi.Thumbnail, assetType: immichapi.VIDEO, want: false},
+		{name: "enabled, preview, video: preview is never a video stream", resizeVideo: enabled, size: immichapi.Preview, assetType: immichapi.VIDEO, want: false},
+		{name: "enabled, fullsize, video: fullsize is never a video stream", resizeVideo: enabled, size: immichapi.Fullsize, assetType: immichapi.VIDEO, want: false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := shouldResizeVideo(tc.resizeVideo, tc.size, tc.assetType); got != tc.want {
 				t.Errorf("shouldResizeVideo(%+v, %q, %q) = %t, want %t", tc.resizeVideo, tc.size, tc.assetType, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEffectiveSize(t *testing.T) {
+	enabled := ResizeVideoOptions{Enabled: true, Preset: ResizeVideoPreset1080pWebFriendly}
+	disabled := ResizeVideoOptions{Enabled: false}
+
+	tests := []struct {
+		name        string
+		size        immichapi.AssetMediaSize
+		resizeVideo ResizeVideoOptions
+		assetType   immichapi.AssetTypeEnum
+		want        immichapi.AssetMediaSize
+	}{
+		{name: "resizeVideo disabled, video: keeps configured size", size: immichapi.Preview, resizeVideo: disabled, assetType: immichapi.VIDEO, want: immichapi.Preview},
+		{name: "resizeVideo enabled, video: always original regardless of configured size", size: immichapi.Preview, resizeVideo: enabled, assetType: immichapi.VIDEO, want: immichapi.Original},
+		{name: "resizeVideo enabled, thumbnail configured, video: still forced to original", size: immichapi.Thumbnail, resizeVideo: enabled, assetType: immichapi.VIDEO, want: immichapi.Original},
+		{name: "resizeVideo enabled, image: unaffected, keeps configured size", size: immichapi.Preview, resizeVideo: enabled, assetType: immichapi.IMAGE, want: immichapi.Preview},
+		{name: "resizeVideo enabled, audio: unaffected, keeps configured size", size: immichapi.Preview, resizeVideo: enabled, assetType: immichapi.AUDIO, want: immichapi.Preview},
+		{name: "resizeVideo enabled, video, already original: stays original", size: immichapi.Original, resizeVideo: enabled, assetType: immichapi.VIDEO, want: immichapi.Original},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := effectiveSize(tc.size, tc.resizeVideo, tc.assetType); got != tc.want {
+				t.Errorf("effectiveSize(%q, %+v, %q) = %q, want %q", tc.size, tc.resizeVideo, tc.assetType, got, tc.want)
 			}
 		})
 	}

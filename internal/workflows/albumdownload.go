@@ -65,13 +65,14 @@ type ManifestAsset struct {
 	// download time (see AssignLocalNames and ExtensionForContentType).
 	FileName string `json:"fileName"`
 	// Checksum is the *original* asset's checksum (base64 SHA1) at the time
-	// it was last downloaded, used for change detection even in --size
-	// thumbnail mode: Immich exposes no separate thumbnail checksum, and a
-	// thumbnail is derived deterministically from the original, so an
-	// unchanged original checksum is treated as "nothing to refresh". A
-	// metadata-only edit that doesn't change the original file's bytes
-	// (e.g. a pure EXIF rotation) will therefore not trigger a thumbnail
-	// re-download — a known, documented limitation.
+	// it was last downloaded, used for change detection even in
+	// non-original --size modes: Immich exposes no separate checksum for
+	// the fullsize/preview/thumbnail variants, and each is derived
+	// deterministically from the original, so an unchanged original
+	// checksum is treated as "nothing to refresh". A metadata-only edit
+	// that doesn't change the original file's bytes (e.g. a pure EXIF
+	// rotation) will therefore not trigger a re-download — a known,
+	// documented limitation.
 	Checksum string `json:"checksum"`
 	Type     string `json:"type"`
 }
@@ -79,8 +80,8 @@ type ManifestAsset struct {
 // DownloadAlbumOptions controls both DownloadAlbum (plain) and
 // PlanAlbumSync/ApplyAlbumSync (--sync).
 type DownloadAlbumOptions struct {
-	// Size selects the media variant: immichapi.Original or
-	// immichapi.Thumbnail (the command layer rejects any other
+	// Size selects the media variant: immichapi.Original, Fullsize,
+	// Preview, or Thumbnail (the command layer rejects any other
 	// AssetMediaSize value before it reaches this package).
 	Size immichapi.AssetMediaSize
 	// IgnoreVideos drops every AssetTypeEnum VIDEO asset before planning or
@@ -107,10 +108,11 @@ type DownloadAlbumOptions struct {
 const DefaultResizeQuality = 85
 
 // ResizeOptions controls the optional ImageMagick post-processing step:
-// every downloaded file (original or thumbnail) is re-encoded to JPEG,
-// optionally resized to fit within Width/Height. It is a deliberate,
-// documented exception to "always original format" for cases where local
-// disk/transfer size matters more than preserving the exact source format.
+// every downloaded file (original, or a fullsize/preview/thumbnail
+// variant) is re-encoded to JPEG, optionally resized to fit within
+// Width/Height. It is a deliberate, documented exception to "always
+// original format" for cases where local disk/transfer size matters more
+// than preserving the exact source format.
 type ResizeOptions struct {
 	// Enabled turns the feature on. When false, every other field is
 	// ignored and downloaded files keep their natural format.
@@ -209,8 +211,8 @@ var ValidResizeVideoPresets = []string{ResizeVideoPreset1080pWebFriendly}
 
 // ResizeVideoOptions controls the optional ffmpeg re-encoding step applied
 // to VIDEO assets downloaded with --size original (see shouldResizeVideo —
-// thumbnails are always a static image, never a video stream, so this never
-// applies to --size thumbnail).
+// the fullsize/preview/thumbnail variants are always a static image, never
+// a video stream, so this never applies to those --size values).
 type ResizeVideoOptions struct {
 	// Enabled turns the feature on. When false, Preset/ExecutablePath are
 	// ignored and downloaded videos keep their natural format.
@@ -468,11 +470,11 @@ func FetchFilteredAlbumAssets(ctx context.Context, c *client.Client, albumID ope
 	return assets, nil
 }
 
-// fetchAssetStream requests one asset (original or thumbnail, per size) and
-// returns its body stream (caller must close it) plus the file extension to
-// use: the original file's own extension for immichapi.Original, or sniffed
-// from the actual response Content-Type for immichapi.Thumbnail (see
-// ExtensionForContentType).
+// fetchAssetStream requests one asset (original, or a thumbnail-endpoint
+// variant, per size) and returns its body stream (caller must close it)
+// plus the file extension to use: the original file's own extension for
+// immichapi.Original, or sniffed from the actual response Content-Type for
+// every other variant (see ExtensionForContentType).
 func fetchAssetStream(ctx context.Context, c *client.Client, a immichapi.AssetResponseDto, size immichapi.AssetMediaSize) (io.ReadCloser, string, error) {
 	switch size {
 	case immichapi.Original:
@@ -487,11 +489,16 @@ func fetchAssetStream(ctx context.Context, c *client.Client, a immichapi.AssetRe
 		}
 		return resp.Body, filepath.Ext(a.OriginalFileName), nil
 
-	case immichapi.Thumbnail:
-		thumbSize := immichapi.Thumbnail
-		resp, err := c.API.ViewAsset(ctx, a.Id, &immichapi.ViewAssetParams{Size: &thumbSize})
+	case immichapi.Fullsize, immichapi.Preview, immichapi.Thumbnail:
+		// GET /assets/{id}/thumbnail?size=fullsize|preview|thumbnail. Note
+		// size=original is deliberately never sent here: the OpenAPI spec
+		// deprecates that value on this endpoint ("Use the original
+		// endpoint directly instead"), which is exactly what the
+		// immichapi.Original case above does via a separate endpoint.
+		requestedSize := size
+		resp, err := c.API.ViewAsset(ctx, a.Id, &immichapi.ViewAssetParams{Size: &requestedSize})
 		if err != nil {
-			return nil, "", fmt.Errorf("downloading thumbnail: %w", err)
+			return nil, "", fmt.Errorf("downloading %s: %w", size, err)
 		}
 		if resp.StatusCode != http.StatusOK {
 			defer resp.Body.Close()
@@ -501,36 +508,37 @@ func fetchAssetStream(ctx context.Context, c *client.Client, a immichapi.AssetRe
 		return resp.Body, ExtensionForContentType(resp.Header.Get("Content-Type")), nil
 
 	default:
-		return nil, "", fmt.Errorf("unsupported download-album size %q (must be %q or %q)", size, immichapi.Original, immichapi.Thumbnail)
+		return nil, "", fmt.Errorf("unsupported download-album size %q (must be %q, %q, %q, or %q)", size, immichapi.Original, immichapi.Fullsize, immichapi.Preview, immichapi.Thumbnail)
 	}
 }
 
 // shouldResize reports whether downloadAssetFile should run ImageMagick
-// against this asset's downloaded stream. GET /assets/{id}/thumbnail always
-// returns a static preview image regardless of the asset's own Type (Immich
-// generates an image thumbnail even for videos), so thumbnail-size resize
-// is always safe when enabled. GET /assets/{id}/original returns the
-// asset's real file, though — running ImageMagick against a video (or
-// audio/other) original would treat it as a sequence of frames and either
-// fail or silently produce one JPEG per frame, so original-size resize is
+// against this asset's downloaded stream. GET /assets/{id}/thumbnail
+// (fullsize, preview, or thumbnail) always returns a static preview image
+// regardless of the asset's own Type (Immich generates an image thumbnail
+// even for videos), so resize is always safe when enabled for any of
+// those three variants. GET /assets/{id}/original returns the asset's real
+// file, though — running ImageMagick against a video (or audio/other)
+// original would treat it as a sequence of frames and either fail or
+// silently produce one JPEG per frame, so original-size resize is
 // restricted to Type == IMAGE. Pure (no network) so this decision is
 // directly unit-testable.
 func shouldResize(resize ResizeOptions, size immichapi.AssetMediaSize, assetType immichapi.AssetTypeEnum) bool {
 	if !resize.Enabled {
 		return false
 	}
-	if size == immichapi.Thumbnail {
+	if size != immichapi.Original {
 		return true
 	}
 	return assetType == immichapi.IMAGE
 }
 
 // shouldResizeVideo reports whether downloadAssetFile should run ffmpeg
-// against this asset's downloaded stream. GET /assets/{id}/thumbnail is
-// always a static preview image, never a video stream, even for a VIDEO
-// asset — so this only ever applies to --size original, and only for
-// Type == VIDEO. Pure (no network) so this decision is directly
-// unit-testable.
+// against this asset's downloaded stream. GET /assets/{id}/thumbnail
+// (fullsize, preview, or thumbnail) is always a static preview image,
+// never a video stream, even for a VIDEO asset — so this only ever
+// applies to --size original, and only for Type == VIDEO. Pure (no
+// network) so this decision is directly unit-testable.
 func shouldResizeVideo(resizeVideo ResizeVideoOptions, size immichapi.AssetMediaSize, assetType immichapi.AssetTypeEnum) bool {
 	if !resizeVideo.Enabled {
 		return false
@@ -541,9 +549,28 @@ func shouldResizeVideo(resizeVideo ResizeVideoOptions, size immichapi.AssetMedia
 	return assetType == immichapi.VIDEO
 }
 
-// downloadAssetFile downloads one asset (original or thumbnail, per size)
-// to destBasePath + <extension>, and returns the full destination path
-// used. Exactly one of shouldResize / shouldResizeVideo can ever be true
+// effectiveSize resolves the actual AssetMediaSize to request for one
+// asset, given the run's configured --size and --resize-video-preset
+// option. VIDEO assets are always fetched as immichapi.Original when
+// ResizeVideo is enabled, regardless of the configured size: many videos
+// have no usable fullsize/preview/thumbnail rendition at all (or only ever
+// a static placeholder frame), and ffmpeg needs the real video stream to
+// transcode anyway. This lets one run mix a smaller --size (e.g. preview,
+// the default) for photos/other assets with full-quality video download
+// and transcoding in the same command — see printDownloadSizePlan in the
+// commands package for the user-facing summary of this behavior. Pure (no
+// network) so this decision is directly unit-testable.
+func effectiveSize(size immichapi.AssetMediaSize, resizeVideo ResizeVideoOptions, assetType immichapi.AssetTypeEnum) immichapi.AssetMediaSize {
+	if resizeVideo.Enabled && assetType == immichapi.VIDEO {
+		return immichapi.Original
+	}
+	return size
+}
+
+// downloadAssetFile downloads one asset (original, or a fullsize/preview/
+// thumbnail variant, per the effective size — see effectiveSize) to
+// destBasePath + <extension>, and returns the full destination path used.
+// Exactly one of shouldResize / shouldResizeVideo can ever be true
 // for a given asset (an asset's Type is never both IMAGE and VIDEO): if
 // shouldResize, the downloaded file is first saved to a temporary path,
 // then re-encoded to destBasePath+".jpg" via RunImageMagickResize; if
@@ -553,6 +580,8 @@ func shouldResizeVideo(resizeVideo ResizeVideoOptions, size immichapi.AssetMedia
 // video downloaded as --size original with only --resize set) the file is
 // saved as-is in its natural format.
 func downloadAssetFile(ctx context.Context, c *client.Client, a immichapi.AssetResponseDto, size immichapi.AssetMediaSize, destBasePath string, resize ResizeOptions, resizeVideo ResizeVideoOptions) (string, error) {
+	size = effectiveSize(size, resizeVideo, a.Type)
+
 	body, ext, err := fetchAssetStream(ctx, c, a, size)
 	if err != nil {
 		return "", err

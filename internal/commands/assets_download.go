@@ -112,6 +112,21 @@ func downloadOneAsset(ctx context.Context, c *client.Client, id openapi_types.UU
 	return nil
 }
 
+// resolveDownloadThumbnailSize validates the --size flag value for
+// download-thumbnail, a thin direct wrapper over GET /assets/{id}/thumbnail
+// (viewAsset). Only fullsize, preview, and thumbnail are accepted:
+// "original" is deliberately rejected because the OpenAPI spec's
+// x-immich-history for this endpoint's size parameter marks it deprecated
+// ("Use the original endpoint directly instead" — i.e. assets
+// download-original / GET /assets/{id}/original).
+func resolveDownloadThumbnailSize(raw string) (immichapi.AssetMediaSize, error) {
+	size := immichapi.AssetMediaSize(raw)
+	if size != immichapi.Fullsize && size != immichapi.Preview && size != immichapi.Thumbnail {
+		return "", fmt.Errorf("invalid --size %q: must be one of fullsize, preview, thumbnail ('original' is not accepted — the OpenAPI spec deprecates size=original on this endpoint; use 'assets download-original' instead)", raw)
+	}
+	return size, nil
+}
+
 // assetsDownloadThumbnailCommand returns the `download-thumbnail` subcommand
 // (GET /assets/{id}/thumbnail, operationId viewAsset).
 func assetsDownloadThumbnailCommand() *cli.Command {
@@ -127,8 +142,8 @@ func assetsDownloadThumbnailCommand() *cli.Command {
 			},
 			&cli.StringFlag{
 				Name:  "size",
-				Usage: "media size: thumbnail, preview, fullsize, or original (see the AssetMediaSize spec enum; 'original' redirects server-side to the full download)",
-				Value: string(immichapi.Thumbnail),
+				Usage: "media size: fullsize, preview, or thumbnail (see the AssetMediaSize spec enum; 'original' is not accepted here — the spec deprecates size=original on this endpoint, use 'assets download-original' instead)",
+				Value: string(immichapi.Preview),
 			},
 			&cli.BoolFlag{
 				Name:  "edited",
@@ -145,9 +160,9 @@ func assetsDownloadThumbnail(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	size := immichapi.AssetMediaSize(cmd.String("size"))
-	if !size.Valid() {
-		return fmt.Errorf("invalid --size %q: must be one of thumbnail, preview, fullsize, original", cmd.String("size"))
+	size, err := resolveDownloadThumbnailSize(cmd.String("size"))
+	if err != nil {
+		return err
 	}
 
 	c, err := newClient(ctx, cmd)
