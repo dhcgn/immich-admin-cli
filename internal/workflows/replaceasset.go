@@ -1,17 +1,14 @@
 package workflows
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha1"
 	"encoding/base64"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
-	"time"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
@@ -120,68 +117,9 @@ func ReplaceAsset(ctx context.Context, c *client.Client, pair ReplacePair, opts 
 }
 
 // uploadReplacementAsset uploads the local file at path as a new asset
-// (POST /assets, multipart/form-data) and returns its new asset ID.
-//
-// oapi-codegen only generates a type alias for the multipart body of binary
-// fields (UploadAssetMultipartRequestBody = AssetMediaCreateDto); it does not
-// generate a multipart writer, so the request body is built by hand here.
+// via UploadAssetFile (POST /assets). Timestamps default to the file's mtime.
 func uploadReplacementAsset(ctx context.Context, c *client.Client, path string) (openapi_types.UUID, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return openapi_types.UUID{}, fmt.Errorf("opening %q: %w", path, err)
-	}
-	defer f.Close()
-
-	fi, err := f.Stat()
-	if err != nil {
-		return openapi_types.UUID{}, fmt.Errorf("stating %q: %w", path, err)
-	}
-	mtime := fi.ModTime().UTC().Format(time.RFC3339)
-
-	var body bytes.Buffer
-	mw := multipart.NewWriter(&body)
-
-	if err := mw.WriteField("fileCreatedAt", mtime); err != nil {
-		return openapi_types.UUID{}, fmt.Errorf("building upload body: %w", err)
-	}
-	if err := mw.WriteField("fileModifiedAt", mtime); err != nil {
-		return openapi_types.UUID{}, fmt.Errorf("building upload body: %w", err)
-	}
-	part, err := mw.CreateFormFile("assetData", filepath.Base(path))
-	if err != nil {
-		return openapi_types.UUID{}, fmt.Errorf("building upload body: %w", err)
-	}
-	if _, err := io.Copy(part, f); err != nil {
-		return openapi_types.UUID{}, fmt.Errorf("reading %q: %w", path, err)
-	}
-	if err := mw.Close(); err != nil {
-		return openapi_types.UUID{}, fmt.Errorf("building upload body: %w", err)
-	}
-
-	resp, err := c.API.UploadAssetWithBodyWithResponse(ctx, nil, mw.FormDataContentType(), &body)
-	if err != nil {
-		return openapi_types.UUID{}, fmt.Errorf("uploading asset: %w", err)
-	}
-
-	switch resp.StatusCode() {
-	case http.StatusCreated:
-		if resp.JSON201 == nil {
-			return openapi_types.UUID{}, fmt.Errorf("upload succeeded but response had no body")
-		}
-		return resp.JSON201.Id, nil
-	case http.StatusOK:
-		// The server matched the file's checksum to an existing asset
-		// instead of creating a new one. Treating that asset as "our"
-		// replacement would risk running copy/delete against the wrong
-		// (or the same) asset, so abort instead.
-		existingID := "unknown"
-		if resp.JSON200 != nil {
-			existingID = resp.JSON200.Id.String()
-		}
-		return openapi_types.UUID{}, fmt.Errorf("upload was treated as a duplicate of existing asset %s (checksum matches); aborting to avoid acting on the wrong asset", existingID)
-	default:
-		return openapi_types.UUID{}, fmt.Errorf("server returned %s (expected 200 or 201): %s", resp.Status(), string(resp.GetBody()))
-	}
+	return UploadAssetFile(ctx, c, path, UploadOptions{})
 }
 
 // verifyUploadedAsset confirms the newly uploaded asset exists and its
