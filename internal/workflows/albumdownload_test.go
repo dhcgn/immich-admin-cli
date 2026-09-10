@@ -171,7 +171,7 @@ func TestManifestSaveLoadRoundTrip(t *testing.T) {
 	m := Manifest{
 		AlbumID:   "album-1",
 		AlbumName: "Vacation",
-		Size:      immichapi.Thumbnail,
+		Size:      immichapi.AssetMediaSizeThumbnail,
 		Assets: map[string]ManifestAsset{
 			"asset-1": {FileName: "a.webp", Checksum: "c1", Type: "IMAGE"},
 		},
@@ -352,19 +352,19 @@ func TestShouldResize(t *testing.T) {
 		assetType immichapi.AssetTypeEnum
 		want      bool
 	}{
-		{name: "disabled, original, image", resize: disabled, size: immichapi.Original, assetType: immichapi.IMAGE, want: false},
-		{name: "enabled, original, image", resize: enabled, size: immichapi.Original, assetType: immichapi.IMAGE, want: true},
-		{name: "enabled, original, video: never resize the real video file", resize: enabled, size: immichapi.Original, assetType: immichapi.VIDEO, want: false},
-		{name: "enabled, original, audio", resize: enabled, size: immichapi.Original, assetType: immichapi.AUDIO, want: false},
-		{name: "enabled, original, other", resize: enabled, size: immichapi.Original, assetType: immichapi.OTHER, want: false},
-		{name: "enabled, thumbnail, video: thumbnail is always a static image", resize: enabled, size: immichapi.Thumbnail, assetType: immichapi.VIDEO, want: true},
-		{name: "enabled, thumbnail, image", resize: enabled, size: immichapi.Thumbnail, assetType: immichapi.IMAGE, want: true},
-		{name: "disabled, thumbnail, image", resize: disabled, size: immichapi.Thumbnail, assetType: immichapi.IMAGE, want: false},
-		{name: "enabled, preview, video: preview is always a static image", resize: enabled, size: immichapi.Preview, assetType: immichapi.VIDEO, want: true},
-		{name: "enabled, preview, image", resize: enabled, size: immichapi.Preview, assetType: immichapi.IMAGE, want: true},
-		{name: "disabled, preview, image", resize: disabled, size: immichapi.Preview, assetType: immichapi.IMAGE, want: false},
-		{name: "enabled, fullsize, video: fullsize is always a static image", resize: enabled, size: immichapi.Fullsize, assetType: immichapi.VIDEO, want: true},
-		{name: "enabled, fullsize, image", resize: enabled, size: immichapi.Fullsize, assetType: immichapi.IMAGE, want: true},
+		{name: "disabled, original, image", resize: disabled, size: immichapi.AssetMediaSizeOriginal, assetType: immichapi.IMAGE, want: false},
+		{name: "enabled, original, image", resize: enabled, size: immichapi.AssetMediaSizeOriginal, assetType: immichapi.IMAGE, want: true},
+		{name: "enabled, original, video: never resize the real video file", resize: enabled, size: immichapi.AssetMediaSizeOriginal, assetType: immichapi.VIDEO, want: false},
+		{name: "enabled, original, audio", resize: enabled, size: immichapi.AssetMediaSizeOriginal, assetType: immichapi.AUDIO, want: false},
+		{name: "enabled, original, other", resize: enabled, size: immichapi.AssetMediaSizeOriginal, assetType: immichapi.OTHER, want: false},
+		{name: "enabled, thumbnail, video: thumbnail is always a static image", resize: enabled, size: immichapi.AssetMediaSizeThumbnail, assetType: immichapi.VIDEO, want: true},
+		{name: "enabled, thumbnail, image", resize: enabled, size: immichapi.AssetMediaSizeThumbnail, assetType: immichapi.IMAGE, want: true},
+		{name: "disabled, thumbnail, image", resize: disabled, size: immichapi.AssetMediaSizeThumbnail, assetType: immichapi.IMAGE, want: false},
+		{name: "enabled, preview, video: preview is always a static image", resize: enabled, size: immichapi.AssetMediaSizePreview, assetType: immichapi.VIDEO, want: true},
+		{name: "enabled, preview, image", resize: enabled, size: immichapi.AssetMediaSizePreview, assetType: immichapi.IMAGE, want: true},
+		{name: "disabled, preview, image", resize: disabled, size: immichapi.AssetMediaSizePreview, assetType: immichapi.IMAGE, want: false},
+		{name: "enabled, fullsize, video: fullsize is always a static image", resize: enabled, size: immichapi.AssetMediaSizeFullsize, assetType: immichapi.VIDEO, want: true},
+		{name: "enabled, fullsize, image", resize: enabled, size: immichapi.AssetMediaSizeFullsize, assetType: immichapi.IMAGE, want: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -418,12 +418,12 @@ func TestShouldResizeVideo(t *testing.T) {
 		assetType   immichapi.AssetTypeEnum
 		want        bool
 	}{
-		{name: "disabled, original, video", resizeVideo: disabled, size: immichapi.Original, assetType: immichapi.VIDEO, want: false},
-		{name: "enabled, original, video", resizeVideo: enabled, size: immichapi.Original, assetType: immichapi.VIDEO, want: true},
-		{name: "enabled, original, image: never transcode a real image as video", resizeVideo: enabled, size: immichapi.Original, assetType: immichapi.IMAGE, want: false},
-		{name: "enabled, thumbnail, video: thumbnail is never a video stream", resizeVideo: enabled, size: immichapi.Thumbnail, assetType: immichapi.VIDEO, want: false},
-		{name: "enabled, preview, video: preview is never a video stream", resizeVideo: enabled, size: immichapi.Preview, assetType: immichapi.VIDEO, want: false},
-		{name: "enabled, fullsize, video: fullsize is never a video stream", resizeVideo: enabled, size: immichapi.Fullsize, assetType: immichapi.VIDEO, want: false},
+		{name: "disabled, original, video", resizeVideo: disabled, size: immichapi.AssetMediaSizeOriginal, assetType: immichapi.VIDEO, want: false},
+		{name: "enabled, original, video", resizeVideo: enabled, size: immichapi.AssetMediaSizeOriginal, assetType: immichapi.VIDEO, want: true},
+		{name: "enabled, original, image: never transcode a real image as video", resizeVideo: enabled, size: immichapi.AssetMediaSizeOriginal, assetType: immichapi.IMAGE, want: false},
+		{name: "enabled, thumbnail, video: thumbnail is never a video stream", resizeVideo: enabled, size: immichapi.AssetMediaSizeThumbnail, assetType: immichapi.VIDEO, want: false},
+		{name: "enabled, preview, video: preview is never a video stream", resizeVideo: enabled, size: immichapi.AssetMediaSizePreview, assetType: immichapi.VIDEO, want: false},
+		{name: "enabled, fullsize, video: fullsize is never a video stream", resizeVideo: enabled, size: immichapi.AssetMediaSizeFullsize, assetType: immichapi.VIDEO, want: false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -445,12 +445,12 @@ func TestEffectiveSize(t *testing.T) {
 		assetType   immichapi.AssetTypeEnum
 		want        immichapi.AssetMediaSize
 	}{
-		{name: "resizeVideo disabled, video: keeps configured size", size: immichapi.Preview, resizeVideo: disabled, assetType: immichapi.VIDEO, want: immichapi.Preview},
-		{name: "resizeVideo enabled, video: always original regardless of configured size", size: immichapi.Preview, resizeVideo: enabled, assetType: immichapi.VIDEO, want: immichapi.Original},
-		{name: "resizeVideo enabled, thumbnail configured, video: still forced to original", size: immichapi.Thumbnail, resizeVideo: enabled, assetType: immichapi.VIDEO, want: immichapi.Original},
-		{name: "resizeVideo enabled, image: unaffected, keeps configured size", size: immichapi.Preview, resizeVideo: enabled, assetType: immichapi.IMAGE, want: immichapi.Preview},
-		{name: "resizeVideo enabled, audio: unaffected, keeps configured size", size: immichapi.Preview, resizeVideo: enabled, assetType: immichapi.AUDIO, want: immichapi.Preview},
-		{name: "resizeVideo enabled, video, already original: stays original", size: immichapi.Original, resizeVideo: enabled, assetType: immichapi.VIDEO, want: immichapi.Original},
+		{name: "resizeVideo disabled, video: keeps configured size", size: immichapi.AssetMediaSizePreview, resizeVideo: disabled, assetType: immichapi.VIDEO, want: immichapi.AssetMediaSizePreview},
+		{name: "resizeVideo enabled, video: always original regardless of configured size", size: immichapi.AssetMediaSizePreview, resizeVideo: enabled, assetType: immichapi.VIDEO, want: immichapi.AssetMediaSizeOriginal},
+		{name: "resizeVideo enabled, thumbnail configured, video: still forced to original", size: immichapi.AssetMediaSizeThumbnail, resizeVideo: enabled, assetType: immichapi.VIDEO, want: immichapi.AssetMediaSizeOriginal},
+		{name: "resizeVideo enabled, image: unaffected, keeps configured size", size: immichapi.AssetMediaSizePreview, resizeVideo: enabled, assetType: immichapi.IMAGE, want: immichapi.AssetMediaSizePreview},
+		{name: "resizeVideo enabled, audio: unaffected, keeps configured size", size: immichapi.AssetMediaSizePreview, resizeVideo: enabled, assetType: immichapi.AUDIO, want: immichapi.AssetMediaSizePreview},
+		{name: "resizeVideo enabled, video, already original: stays original", size: immichapi.AssetMediaSizeOriginal, resizeVideo: enabled, assetType: immichapi.VIDEO, want: immichapi.AssetMediaSizeOriginal},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -483,19 +483,19 @@ func TestPlanAlbumSyncRefusesMismatchedManifest(t *testing.T) {
 		},
 		{
 			name:     "different size",
-			manifest: Manifest{AlbumID: album.Id.String(), Size: immichapi.Thumbnail},
+			manifest: Manifest{AlbumID: album.Id.String(), Size: immichapi.AssetMediaSizeThumbnail},
 		},
 		{
 			name:     "different resize setting",
-			manifest: Manifest{AlbumID: album.Id.String(), Size: immichapi.Original, Resize: true},
+			manifest: Manifest{AlbumID: album.Id.String(), Size: immichapi.AssetMediaSizeOriginal, Resize: true},
 		},
 		{
 			name:     "different resize-video-preset setting",
-			manifest: Manifest{AlbumID: album.Id.String(), Size: immichapi.Original, ResizeVideoPreset: ResizeVideoPreset1080pWebFriendly},
+			manifest: Manifest{AlbumID: album.Id.String(), Size: immichapi.AssetMediaSizeOriginal, ResizeVideoPreset: ResizeVideoPreset1080pWebFriendly},
 		},
 		{
 			name:     "different timestamp-prefix setting",
-			manifest: Manifest{AlbumID: album.Id.String(), Size: immichapi.Original, TimestampPrefix: true},
+			manifest: Manifest{AlbumID: album.Id.String(), Size: immichapi.AssetMediaSizeOriginal, TimestampPrefix: true},
 		},
 	}
 
@@ -508,7 +508,7 @@ func TestPlanAlbumSyncRefusesMismatchedManifest(t *testing.T) {
 
 			// These mismatches are all detected before any network call, so
 			// a nil client is safe here.
-			_, _, _, err := PlanAlbumSync(context.Background(), nil, album, dir, DownloadAlbumOptions{Size: immichapi.Original})
+			_, _, _, err := PlanAlbumSync(context.Background(), nil, album, dir, DownloadAlbumOptions{Size: immichapi.AssetMediaSizeOriginal})
 			if err == nil {
 				t.Fatalf("PlanAlbumSync() error = nil, want a mismatch error")
 			}

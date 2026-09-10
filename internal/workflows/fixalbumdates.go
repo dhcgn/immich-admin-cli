@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
-	"strconv"
 	"time"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -171,18 +170,18 @@ func deviationFromRange(t time.Time, p AlbumDatePattern) time.Duration {
 
 // fetchAlbumAssets returns every asset in albumID via the album-scoped
 // metadata search (POST /search/metadata, MetadataSearchDto.AlbumIds),
-// following the NextPage cursor until exhausted. AlbumResponseDto itself
+// following the result cursor until exhausted. AlbumResponseDto itself
 // carries no assets list in this API version.
 func fetchAlbumAssets(ctx context.Context, c *client.Client, albumID openapi_types.UUID) ([]immichapi.AssetResponseDto, error) {
 	var assets []immichapi.AssetResponseDto
-	page := 1
+	var pager SearchPager
 	size := 250
 	for {
 		body := immichapi.MetadataSearchDto{
 			AlbumIds: &[]openapi_types.UUID{albumID},
-			Page:     &page,
 			Size:     &size,
 		}
+		pager.Apply(&body)
 
 		resp, err := c.API.SearchAssetsWithResponse(ctx, &immichapi.SearchAssetsParams{}, body)
 		if err == nil {
@@ -197,16 +196,9 @@ func fetchAlbumAssets(ctx context.Context, c *client.Client, albumID openapi_typ
 
 		assets = append(assets, resp.JSON200.Assets.Items...)
 
-		next := resp.JSON200.Assets.NextPage
-		if next == nil || *next == "" {
+		if !pager.Next(resp.JSON200.Assets) {
 			return assets, nil
 		}
-		nextPage, err := strconv.Atoi(*next)
-		if err != nil {
-			// Not a plain integer token: stop rather than loop forever.
-			return assets, nil
-		}
-		page = nextPage
 	}
 }
 

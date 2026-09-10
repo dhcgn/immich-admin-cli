@@ -239,10 +239,10 @@ func TestResolveDownloadAlbumSize(t *testing.T) {
 		want    immichapi.AssetMediaSize
 		wantErr bool
 	}{
-		{raw: "original", want: immichapi.Original},
-		{raw: "thumbnail", want: immichapi.Thumbnail},
-		{raw: "preview", want: immichapi.Preview},
-		{raw: "fullsize", want: immichapi.Fullsize},
+		{raw: "original", want: immichapi.AssetMediaSizeOriginal},
+		{raw: "thumbnail", want: immichapi.AssetMediaSizeThumbnail},
+		{raw: "preview", want: immichapi.AssetMediaSizePreview},
+		{raw: "fullsize", want: immichapi.AssetMediaSizeFullsize},
 		{raw: "", wantErr: true},
 		{raw: "bogus", wantErr: true},
 	}
@@ -318,23 +318,23 @@ func TestPrintDownloadSizePlan(t *testing.T) {
 	}{
 		{
 			name: "preview only, no resize",
-			opts: workflows.DownloadAlbumOptions{Size: immichapi.Preview},
+			opts: workflows.DownloadAlbumOptions{Size: immichapi.AssetMediaSizePreview},
 			want: []string{"--size preview for photo/other assets", "videos: downloaded as a static preview image (--size preview)"},
 		},
 		{
 			name:     "original size, no resize: no video caveat needed",
-			opts:     workflows.DownloadAlbumOptions{Size: immichapi.Original},
+			opts:     workflows.DownloadAlbumOptions{Size: immichapi.AssetMediaSizeOriginal},
 			want:     []string{"--size original for photo/other assets"},
 			dontWant: []string{"videos:"},
 		},
 		{
 			name: "preview + resize-video-preset: videos always go original+transcode",
-			opts: workflows.DownloadAlbumOptions{Size: immichapi.Preview, ResizeVideo: workflows.ResizeVideoOptions{Enabled: true, Preset: workflows.ResizeVideoPreset1080pWebFriendly}},
+			opts: workflows.DownloadAlbumOptions{Size: immichapi.AssetMediaSizePreview, ResizeVideo: workflows.ResizeVideoOptions{Enabled: true, Preset: workflows.ResizeVideoPreset1080pWebFriendly}},
 			want: []string{"--size preview for photo/other assets", "videos: downloaded as original and re-encoded to MP4 via --resize-video-preset 1080p-web-friendly"},
 		},
 		{
 			name: "resize enabled",
-			opts: workflows.DownloadAlbumOptions{Size: immichapi.Preview, Resize: workflows.ResizeOptions{Enabled: true, Quality: 80}},
+			opts: workflows.DownloadAlbumOptions{Size: immichapi.AssetMediaSizePreview, Resize: workflows.ResizeOptions{Enabled: true, Quality: 80}},
 			want: []string{"images: re-encoded to JPEG via --resize (quality 80)"},
 		},
 	}

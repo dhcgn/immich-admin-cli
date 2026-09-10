@@ -54,6 +54,8 @@ func main() {
 			commands.Tags(),
 			commands.Users(),
 			commands.ClientWorkflow(),
+			commands.ImmichWorkflow(),
+			commands.Skill(),
 			commands.Update(version),
 		},
 	}

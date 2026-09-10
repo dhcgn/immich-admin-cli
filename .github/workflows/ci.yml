@@ -38,8 +38,8 @@ jobs:
       - name: Test
         run: go test ./...
 
-      - name: Verify generated client and README API table are up to date
+      - name: Verify generated client, README API table, and agent skill are up to date
         run: |
           go generate ./...
-          git diff --exit-code internal/immichapi/ README.md \
-            || (echo "::error::Generated client or README API table is stale. Run 'go generate ./...' and commit." && exit 1)
+          git diff --exit-code internal/immichapi/ README.md immich-admin-cli/SKILL.md \
+            || (echo "::error::Generated client, README API table, or agent skill is stale. Run 'go generate ./...' and commit." && exit 1)

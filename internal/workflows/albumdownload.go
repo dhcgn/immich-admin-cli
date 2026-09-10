@@ -80,8 +80,9 @@ type ManifestAsset struct {
 // DownloadAlbumOptions controls both DownloadAlbum (plain) and
 // PlanAlbumSync/ApplyAlbumSync (--sync).
 type DownloadAlbumOptions struct {
-	// Size selects the media variant: immichapi.Original, Fullsize,
-	// Preview, or Thumbnail (the command layer rejects any other
+	// Size selects the media variant: immichapi.AssetMediaSizeOriginal,
+	// AssetMediaSizeFullsize, AssetMediaSizePreview, or
+	// AssetMediaSizeThumbnail (the command layer rejects any other
 	// AssetMediaSize value before it reaches this package).
 	Size immichapi.AssetMediaSize
 	// IgnoreVideos drops every AssetTypeEnum VIDEO asset before planning or
@@ -473,11 +474,11 @@ func FetchFilteredAlbumAssets(ctx context.Context, c *client.Client, albumID ope
 // fetchAssetStream requests one asset (original, or a thumbnail-endpoint
 // variant, per size) and returns its body stream (caller must close it)
 // plus the file extension to use: the original file's own extension for
-// immichapi.Original, or sniffed from the actual response Content-Type for
+// immichapi.AssetMediaSizeOriginal, or sniffed from the actual response Content-Type for
 // every other variant (see ExtensionForContentType).
 func fetchAssetStream(ctx context.Context, c *client.Client, a immichapi.AssetResponseDto, size immichapi.AssetMediaSize) (io.ReadCloser, string, error) {
 	switch size {
-	case immichapi.Original:
+	case immichapi.AssetMediaSizeOriginal:
 		resp, err := c.API.DownloadAsset(ctx, a.Id, nil)
 		if err != nil {
 			return nil, "", fmt.Errorf("downloading original: %w", err)
@@ -489,12 +490,12 @@ func fetchAssetStream(ctx context.Context, c *client.Client, a immichapi.AssetRe
 		}
 		return resp.Body, filepath.Ext(a.OriginalFileName), nil
 
-	case immichapi.Fullsize, immichapi.Preview, immichapi.Thumbnail:
+	case immichapi.AssetMediaSizeFullsize, immichapi.AssetMediaSizePreview, immichapi.AssetMediaSizeThumbnail:
 		// GET /assets/{id}/thumbnail?size=fullsize|preview|thumbnail. Note
 		// size=original is deliberately never sent here: the OpenAPI spec
 		// deprecates that value on this endpoint ("Use the original
 		// endpoint directly instead"), which is exactly what the
-		// immichapi.Original case above does via a separate endpoint.
+		// immichapi.AssetMediaSizeOriginal case above does via a separate endpoint.
 		requestedSize := size
 		resp, err := c.API.ViewAsset(ctx, a.Id, &immichapi.ViewAssetParams{Size: &requestedSize})
 		if err != nil {
@@ -508,7 +509,7 @@ func fetchAssetStream(ctx context.Context, c *client.Client, a immichapi.AssetRe
 		return resp.Body, ExtensionForContentType(resp.Header.Get("Content-Type")), nil
 
 	default:
-		return nil, "", fmt.Errorf("unsupported download-album size %q (must be %q, %q, %q, or %q)", size, immichapi.Original, immichapi.Fullsize, immichapi.Preview, immichapi.Thumbnail)
+		return nil, "", fmt.Errorf("unsupported download-album size %q (must be %q, %q, %q, or %q)", size, immichapi.AssetMediaSizeOriginal, immichapi.AssetMediaSizeFullsize, immichapi.AssetMediaSizePreview, immichapi.AssetMediaSizeThumbnail)
 	}
 }
 
@@ -527,7 +528,7 @@ func shouldResize(resize ResizeOptions, size immichapi.AssetMediaSize, assetType
 	if !resize.Enabled {
 		return false
 	}
-	if size != immichapi.Original {
+	if size != immichapi.AssetMediaSizeOriginal {
 		return true
 	}
 	return assetType == immichapi.IMAGE
@@ -543,7 +544,7 @@ func shouldResizeVideo(resizeVideo ResizeVideoOptions, size immichapi.AssetMedia
 	if !resizeVideo.Enabled {
 		return false
 	}
-	if size != immichapi.Original {
+	if size != immichapi.AssetMediaSizeOriginal {
 		return false
 	}
 	return assetType == immichapi.VIDEO
@@ -551,7 +552,7 @@ func shouldResizeVideo(resizeVideo ResizeVideoOptions, size immichapi.AssetMedia
 
 // effectiveSize resolves the actual AssetMediaSize to request for one
 // asset, given the run's configured --size and --resize-video-preset
-// option. VIDEO assets are always fetched as immichapi.Original when
+// option. VIDEO assets are always fetched as immichapi.AssetMediaSizeOriginal when
 // ResizeVideo is enabled, regardless of the configured size: many videos
 // have no usable fullsize/preview/thumbnail rendition at all (or only ever
 // a static placeholder frame), and ffmpeg needs the real video stream to
@@ -562,7 +563,7 @@ func shouldResizeVideo(resizeVideo ResizeVideoOptions, size immichapi.AssetMedia
 // network) so this decision is directly unit-testable.
 func effectiveSize(size immichapi.AssetMediaSize, resizeVideo ResizeVideoOptions, assetType immichapi.AssetTypeEnum) immichapi.AssetMediaSize {
 	if resizeVideo.Enabled && assetType == immichapi.VIDEO {
-		return immichapi.Original
+		return immichapi.AssetMediaSizeOriginal
 	}
 	return size
 }

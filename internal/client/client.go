@@ -76,9 +76,78 @@ func Check(resp Response, want int) error {
 	return nil
 }
 
+// MinServerVersion is the oldest Immich server this CLI supports (3.2.0:
+// cursor search pagination, workflow logs). Compared numerically against
+// GET /server/version; the prerelease number is ignored.
+const (
+	MinServerMajor = 3
+	MinServerMinor = 2
+	MinServerPatch = 0
+)
+
+// MinServerVersionString renders the minimum supported server version for
+// user-facing messages (e.g. "3.2.0").
+func MinServerVersionString() string {
+	return fmt.Sprintf("%d.%d.%d", MinServerMajor, MinServerMinor, MinServerPatch)
+}
+
+// ServerVersion fetches the server version (GET /server/version,
+// getServerVersion).
+func (c *Client) ServerVersion(ctx context.Context) (immichapi.ServerVersionResponseDto, error) {
+	resp, err := c.API.GetServerVersionWithResponse(ctx)
+	if err != nil {
+		return immichapi.ServerVersionResponseDto{}, fmt.Errorf("calling GET /server/version: %w", err)
+	}
+	if err := Check(resp, http.StatusOK); err != nil {
+		return immichapi.ServerVersionResponseDto{}, fmt.Errorf("GET /server/version: %w", err)
+	}
+	return *resp.JSON200, nil
+}
+
+// ServerTooOld reports whether v is below the minimum supported server
+// version (numeric major/minor/patch comparison; prerelease ignored). Pure
+// so the version gate is directly unit-testable.
+func ServerTooOld(v immichapi.ServerVersionResponseDto) bool {
+	if v.Major != MinServerMajor {
+		return v.Major < MinServerMajor
+	}
+	if v.Minor != MinServerMinor {
+		return v.Minor < MinServerMinor
+	}
+	return v.Patch < MinServerPatch
+}
+
+// FormatServerVersion renders a version DTO as "3.2.0" (with "-rc.N" suffix
+// when the server reports a prerelease number).
+func FormatServerVersion(v immichapi.ServerVersionResponseDto) string {
+	s := fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch)
+	if v.Prerelease != nil {
+		s += fmt.Sprintf("-rc.%d", *v.Prerelease)
+	}
+	return s
+}
+
+// CheckServerVersion fetches the server version and returns a descriptive
+// error when it is below the minimum supported version. Callers decide
+// whether that error aborts (fail fast) or just warns; every CLI command
+// warns via newClient so the requirement stays transparent.
+func (c *Client) CheckServerVersion(ctx context.Context) error {
+	v, err := c.ServerVersion(ctx)
+	if err != nil {
+		return err
+	}
+	if ServerTooOld(v) {
+		return fmt.Errorf("server is %s, this CLI needs Immich >= %s; some commands may misbehave",
+			FormatServerVersion(v), MinServerVersionString())
+	}
+	return nil
+}
+
 // PrintIdentity fetches the current user and prints the identity line
-// (email + server URL) to stderr so users always know which account and
-// instance they are operating against.
+// (email + server URL + server version) to stderr so users always know
+// which account and instance — and which minimum version applies — they
+// are operating against. A version-fetch failure degrades to "unknown"
+// rather than hiding the identity line.
 func (c *Client) PrintIdentity(ctx context.Context) {
 	resp, err := c.API.GetMyUserWithResponse(ctx)
 	if err != nil {
@@ -89,5 +158,10 @@ func (c *Client) PrintIdentity(ctx context.Context) {
 		fmt.Fprintf(os.Stderr, "⚠ could not verify identity: %s\n", resp.Status())
 		return
 	}
-	fmt.Fprintf(os.Stderr, "%s (%s)\n", resp.JSON200.Email, c.Server)
+	version := "unknown"
+	if v, err := c.ServerVersion(ctx); err == nil {
+		version = FormatServerVersion(v)
+	}
+	fmt.Fprintf(os.Stderr, "%s (%s, server %s, needs >= %s)\n",
+		resp.JSON200.Email, c.Server, version, MinServerVersionString())
 }
