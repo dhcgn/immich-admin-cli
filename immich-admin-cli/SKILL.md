@@ -378,6 +378,19 @@ Check for and install the latest release from GitHub
 - Bulk commands continue on per-ID errors and exit non-zero with a
   `N of M failed` summary — inspect stderr, don't assume all-or-nothing.
 
+### Prefer --json for complete information
+
+Human output is lossy by design (one-line summaries plus a count). Almost
+every read command also accepts `--json`, which prints the raw API
+response with all fields. Whenever you need the full record — for
+analysis, filtering, or feeding another tool — prefer it:
+
+```sh
+immich-admin immich-workflow list --json
+immich-admin assets info <ASSET_ID> --json
+immich-admin search metadata --original-file-name IMG --all --json
+```
+
 ### From server errors to asset IDs
 
 Extract failing asset UUIDs from the Immich server log and feed them to
