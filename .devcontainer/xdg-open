@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+url="${1:-}"
+if [[ -z "$url" ]]; then
+    printf 'xdg-open: URL is required\n' >&2
+    exit 2
+fi
+
+if [[ -n "${BROWSER:-}" ]]; then
+    exec "$BROWSER" "$url"
+fi
+
+printf '%s\n' "$url"

@@ -1,0 +1,32 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/go .
+{
+	"name": "Go",
+	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+	"image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+	// Features to add to the dev container. More info: https://containers.dev/features.
+	"features": {
+		"ghcr.io/devcontainers/features/github-cli:1": {},
+		"ghcr.io/devcontainers/features/copilot-cli:1": {},
+		"ghcr.io/devcontainers/features/node:2.1.0": {
+			"version": "22"
+		},
+		"ghcr.io/devcontainers/features/powershell:2": {
+			"version": "7.4"
+		},
+		"ghcr.io/devcontainers/features/go:1": {}
+	},
+	"containerEnv": {
+		"RTK_TELEMETRY_DISABLED": "1"
+	},
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": [],
+	// Use 'postCreateCommand' to run commands after the container is created.
+	"onCreateCommand": "bash .devcontainer/on-create.sh",
+	"postCreateCommand": "bash .devcontainer/post-create.sh",
+	"postStartCommand": "bash .devcontainer/post-start.sh",
+
+	 // Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
+	 // Use root because of git ownership issues
+	 "remoteUser": "root"
+}
