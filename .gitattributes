@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# Executed/sourced inside the Linux container: CRLF breaks shebangs and sourcing.
+*.sh text eol=lf
+.devcontainer/xdg-open text eol=lf

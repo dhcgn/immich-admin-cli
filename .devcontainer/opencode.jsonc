@@ -1,0 +1,240 @@
+{
+  // Open this config: (Join-Path $env:USERPROFILE ".config\opencode\opencode.jsonc") | %{code $_}
+  // Open auth file:  (Join-Path $env:USERPROFILE ".local\share\opencode\auth.json") | %{code $_}
+  // Lyceum model pricing: https://dashboard.lyceum.technology/inference
+  // Get all mentioned EVNs from this config file: [regex]::Matches((gc "$env:USERPROFILE\.config\opencode\opencode.jsonc" -Raw),'\{env:(\w+)\}') | % {"{0} = {1}" -f $_.Groups[1].Value, [Environment]::GetEnvironmentVariable($_.Groups[1].Value)}
+  "$schema": "https://opencode.ai/config.json",
+  "lsp": true,
+  "disabled_providers": [
+    "opencode"
+  ],
+  "plugin": [
+    "@dietrichgebert/ponytail"
+  ],
+  "provider": {
+    "lyceum": {
+      "name": "lyceum",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "https://api.lyceum.technology/openai/v1/",
+        "apiKey": "{env:LYCEUM_API_KEY}"
+      },
+      "models": {
+        "moonshotai/kimi-k3": {
+          "name": "kimi-k3",
+          "reasoning": true,
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ]
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 131072
+          },
+          "cost": {
+            "input": 3.0,
+            "output": 15.0,
+            "cache_read": 0.75,
+            "cache_write": 0
+          },
+          "variants": {
+            "low": {
+              "reasoning": {
+                "effort": "low"
+              }
+            },
+            "high": {
+              "reasoning": {
+                "effort": "high"
+              }
+            },
+            "max": {
+              "reasoning": {
+                "effort": "max"
+              }
+            }
+          }
+        },
+        "z-ai/glm-5.3": {
+          "name": "glm-5.3",
+          "reasoning": true,
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ]
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 131072
+          },
+          "cost": {
+            "input": 1.75,
+            "output": 4.5,
+            "cache_read": 0.44,
+            "cache_write": 0
+          },
+          "variants": {
+            "low": {
+              "reasoning": {
+                "effort": "low"
+              }
+            },
+            "high": {
+              "reasoning": {
+                "effort": "high"
+              }
+            },
+            "max": {
+              "reasoning": {
+                "effort": "max"
+              }
+            }
+          }
+        },
+        "z-ai/glm-5.3-flash": {
+          "name": "glm-5.3-flash",
+          "reasoning": true,
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ]
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 131072
+          },
+          "cost": {
+            "input": 0.2,
+            "output": 0.5,
+            "cache_read": 0.05,
+            "cache_write": 0
+          },
+          "variants": {
+            "low": {
+              "reasoning": {
+                "effort": "low"
+              }
+            },
+            "high": {
+              "reasoning": {
+                "effort": "high"
+              }
+            },
+            "max": {
+              "reasoning": {
+                "effort": "max"
+              }
+            }
+          }
+        }
+      }
+    },
+    "meta": {
+      "name": "Meta Model API",
+      "npm": "@ai-sdk/openai",
+      "options": {
+        "baseURL": "https://api.meta.ai/v1",
+        "apiKey": "{env:META_API_KEY}"
+      },
+      "models": {
+        "muse-spark-1.3-contributor": {
+          "name": "muse-spark-1.3-contributor",
+          "reasoning": true,
+          "limit": {
+            "context": 1048576,
+            "output": 131072
+          },
+          "cost": {
+            "input": 0.10,
+            "cache_read": 0.002,
+            "output": 0.20,
+            "cache_write": 0
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "options": {
+            "reasoningEffort": "high",
+            "reasoningSummary": "auto",
+            "include": [
+              "reasoning.encrypted_content"
+            ]
+          }
+        },
+        "muse-spark-1.3": {
+          "name": "muse-spark-1.3",
+          "reasoning": true,
+          "limit": {
+            "context": 1048576,
+            "output": 131072
+          },
+          "cost": {
+            "input": 1.25,
+            "cache_read": 0.15,
+            "output": 4.25,
+            "cache_write": 0
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "options": {
+            "reasoningEffort": "high",
+            "reasoningSummary": "auto",
+            "include": [
+              "reasoning.encrypted_content"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "mcp": {
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "enabled": true,
+      "headers": {
+        "Authorization": "Bearer {env:CONTEXT7_API_KEY}"
+      }
+    },
+    "brave-search": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@brave/brave-search-mcp-server"
+      ],
+      "environment": {
+        "BRAVE_API_KEY": "{env:BRAVE_API_KEY}"
+      }
+    },
+    "github": {
+      "type": "remote",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "enabled": true,
+      "headers": {
+        "Authorization": "Bearer {env:GITHUB_MCP_PAT}"
+      }
+    }
+  }
+}
