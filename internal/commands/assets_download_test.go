@@ -12,9 +12,9 @@ func TestResolveDownloadThumbnailSize(t *testing.T) {
 		want    immichapi.AssetMediaSize
 		wantErr bool
 	}{
-		{raw: "fullsize", want: immichapi.Fullsize},
-		{raw: "preview", want: immichapi.Preview},
-		{raw: "thumbnail", want: immichapi.Thumbnail},
+		{raw: "fullsize", want: immichapi.AssetMediaSizeFullsize},
+		{raw: "preview", want: immichapi.AssetMediaSizePreview},
+		{raw: "thumbnail", want: immichapi.AssetMediaSizeThumbnail},
 		// "original" is deprecated on GET /assets/{id}/thumbnail per the
 		// OpenAPI spec and must be rejected here (use download-original).
 		{raw: "original", wantErr: true},

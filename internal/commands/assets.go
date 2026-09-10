@@ -228,11 +228,11 @@ func buildUpdateAssetDto(cmd *cli.Command) (*immichapi.UpdateAssetDto, error) {
 		return nil, err
 	}
 	if cmd.IsSet("latitude") {
-		lat := float32(cmd.Float("latitude"))
+		lat := cmd.Float("latitude")
 		body.Latitude = &lat
 	}
 	if cmd.IsSet("longitude") {
-		lon := float32(cmd.Float("longitude"))
+		lon := cmd.Float("longitude")
 		body.Longitude = &lon
 	}
 	if cmd.IsSet("rating") {

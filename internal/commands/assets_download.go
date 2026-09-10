@@ -121,7 +121,7 @@ func downloadOneAsset(ctx context.Context, c *client.Client, id openapi_types.UU
 // download-original / GET /assets/{id}/original).
 func resolveDownloadThumbnailSize(raw string) (immichapi.AssetMediaSize, error) {
 	size := immichapi.AssetMediaSize(raw)
-	if size != immichapi.Fullsize && size != immichapi.Preview && size != immichapi.Thumbnail {
+	if size != immichapi.AssetMediaSizeFullsize && size != immichapi.AssetMediaSizePreview && size != immichapi.AssetMediaSizeThumbnail {
 		return "", fmt.Errorf("invalid --size %q: must be one of fullsize, preview, thumbnail ('original' is not accepted — the OpenAPI spec deprecates size=original on this endpoint; use 'assets download-original' instead)", raw)
 	}
 	return size, nil
@@ -143,7 +143,7 @@ func assetsDownloadThumbnailCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:  "size",
 				Usage: "media size: fullsize, preview, or thumbnail (see the AssetMediaSize spec enum; 'original' is not accepted here — the spec deprecates size=original on this endpoint, use 'assets download-original' instead)",
-				Value: string(immichapi.Preview),
+				Value: string(immichapi.AssetMediaSizePreview),
 			},
 			&cli.BoolFlag{
 				Name:  "edited",
