@@ -61,6 +61,9 @@ func Tags() *cli.Command {
 				},
 				Action: tagsDelete,
 			},
+			tagsUpsertCommand(),
+			tagsBulkTagCommand(),
+			tagsTagCommand(),
 		},
 	}
 }
