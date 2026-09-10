@@ -82,21 +82,51 @@ immich-admin-cli/
 
 ```sh
 pwsh api/download.ps1  # (optional) refresh the OpenAPI spec from upstream
-go generate ./...      # regenerate the client (oapi-codegen) AND the README API coverage table (tools/apitable)
+go generate ./...      # regenerate the client (oapi-codegen), the README API coverage table (tools/apitable), AND immich-admin-cli/SKILL.md (return-agent-skill)
 go build ./...
 go test ./...
 go vet ./...
 go fix ./...    # check for outdated API usage that should be modernized
 ```
 
+### Integration tests (real servers, opt-in)
+
+Unit tests run everywhere (`go test ./...`); integration tests talk to real
+servers and are excluded from CI by the `integration` build tag. Two tiers:
+
+- **Read-only prod tests** (`internal/workflows/*_integration_test.go`): only
+  ever read — never mutate. They use `configPath = ../../config.prod.yaml`
+  and skip when the file is absent.
+- **Staging tests** (`internal/commands/*_integration_test.go`): they reuse
+  `stagingConfigPath = ../../config.staging.yaml` (do not redeclare it) and
+  skip when the file is absent. Reads are free; writes are allowed only as
+  self-cleaning roundtrips — hermetic fixtures in `t.TempDir()`,
+  force-delete plus a `t.Cleanup` safety net so a mid-test failure never
+  leaks an asset (see `assets_upload_delete_integration_test.go`). Tests for
+  features that need pre-existing server data (e.g. workflow logs) skip —
+  never fail — when there is nothing to exercise.
+
+```sh
+go test -tags integration ./internal/workflows/ [-run Name]
+go test -tags integration ./internal/commands/ [-run Name]
+```
+
+Rules for future work: a new write-capable command/workflow ships a staging
+roundtrip test; a new read command extends the staging read coverage. Never
+commit `config*.yaml` (gitignored — API keys); CI never passes `-tags
+integration`.
+
 ## Conventions
 
 - CLI flags should mirror the parameter names from the OpenAPI spec where practical.
+- **Agent skill surface**: `return-agent-skill` prints a SKILL.md generated from the live command tree (name/usage/flags) plus `internal/commands/skill_best_practices.md` (embedded via `//go:embed`). When adding or changing commands, keep `Usage` strings accurate and examples in the best-practices file in sync — both feed the skill. Refresh the checked-in copy with `/refresh-skill`.
 - **README API coverage table**: `README.md` contains a generated table of all spec operations and their implementation status (between `API-TABLE` markers). After implementing a new command, run `go generate ./...` to refresh it — CI fails if it is stale. Implementation status is **auto-detected** by scanning `internal/commands/` for generated method names; there is no manual list to maintain.
+- **Agent skill artifact**: `immich-admin-cli/SKILL.md` is generated the same way (`//go:generate` in `internal/commands/skill.go` runs `return-agent-skill --out`). It is committed and CI-checked for freshness alongside the client and README table — never hand-edit it; change the command `Usage` strings or `skill_best_practices.md` and regenerate.
 - **Base URL**: the config stores the server *origin* only (e.g. `https://immich.example.com/`); `internal/client` appends the `/api` base path declared in the spec's `servers` field. Never put `/api` in config values or operation paths.
+- **Minimum server version**: `internal/client` defines `MinServerMajor/Minor/Patch` (currently 3.2.0). Every command prints the server version in the identity line and warns — never aborts — when the server is older (`CheckServerVersion`, numeric compare, prerelease ignored). Bump the const when the CLI starts depending on newer APIs.
 - **Config files**: `config.example.yaml` is the committed template. Real configs (e.g. `config.prod.yaml`, the default for the `--config` flag) are gitignored because they contain the API key. Env vars `IMMICH_SERVER` / `IMMICH_API_KEY` override file values.
 - UUIDs are `string` typed in Go (matching the spec's `format: uuid`).
-- Pagination: the spec uses `page` / `pageSize` query params — always support pagination in list commands.
+- Pagination: `POST /search/metadata` uses cursor pagination (`cursor`/`nextCursor`, v3.2+) with a legacy `page`/`nextPage` fallback for older servers — always page through `workflows.SearchPager` (`Apply`/`Next`), never hand-rolled page loops. Other list commands follow their endpoint's own paging params.
 - Never hard-code the Immich server URL; always read it from config or a `--server` flag.
 
 ## Binary Downloads
@@ -123,7 +153,7 @@ For endpoints taking ID arrays (e.g. `DELETE /assets` with `AssetBulkDeleteDto`,
 
 Client workflows are the tool's **main purpose**: multi-step operations that combine several API calls with local processing into one command (e.g. replace an asset, re-encode to JPEG XL). They run entirely client-side.
 
-- **Naming**: the CLI group is **`client-workflow`** (alias `cw`), subcommands kebab-case (`replace-asset`, `reencode-jxl`, `reencode-jpegli`). ⚠️ Do NOT use the group name `workflows` — that plural is reserved for the Immich API's own server-side "Workflows" tag (`/workflows/...`), which is an entirely different concept.
+- **Naming**: the CLI group is **`client-workflow`** (alias `cw`), subcommands kebab-case (`replace-asset`, `reencode-jxl`, `reencode-jpegli`). ⚠️ Do NOT use the group name `workflows` — that plural is reserved for the Immich API's own server-side "Workflows" tag (`/workflows/...`), which is an entirely different concept. Thin wrappers over that server-side API live under **`immich-workflow`** (`list`, `get`, `logs`).
 - **Architecture**: workflow logic lives in `internal/workflows/` — one file per workflow plus `workflow.go` holding the shared engine. A workflow is an ordered list of named steps executed per asset; the engine handles step logging, `--dry-run` (print the steps, execute nothing), and the per-asset continue-on-error loop with summary exit code (same bulk conventions and `collectIDs` input handling as commands). The command layer stays thin: `internal/commands/clientworkflow.go` only maps CLI flags to workflow options.
 - **Safety invariants (MUST hold for every workflow)**:
   - The destructive step is always the **last** step.
@@ -146,7 +176,7 @@ How the two generators work — important when touching the spec, the generated 
   - **Deprecated and Internal operations are excluded** from the table (per `deprecated: true`, tag `Deprecated`, or `x-immich-state` ∈ {Deprecated, Internal}) and only counted in the summary line.
   - It prints a **naming-drift warning** to stderr when a spec operationId has no matching generated method — investigate warnings; they mean the naming convention above no longer holds.
   - Output is deterministic (tags alphabetical, rows by path/method), so re-running never causes diff churn.
-- **CI enforces freshness** of BOTH outputs: it runs `go generate ./...` and fails on any diff in `internal/immichapi/` or `README.md`. Therefore: after implementing a command or updating the spec, always run `go generate ./...` and commit the resulting changes together.
+- **CI enforces freshness** of all generated outputs: it runs `go generate ./...` and fails on any diff in `internal/immichapi/`, `README.md`, or `immich-admin-cli/SKILL.md`. Therefore: after implementing a command or updating the spec, always run `go generate ./...` and commit the resulting changes together.
 
 ## Tooling
 
@@ -168,7 +198,7 @@ Rules:
 
 - **Branch from `dev`, never from `main`** — `main` may lag behind. Feature branches are named `feature/<name>` and deleted at merge; `dev` and `main` are permanent.
 - **The tag makes the stable release, not the merge.** Merging `dev`→`main` only runs CI; pushing a `v*` tag on `main` triggers the Release workflow.
-- Before every push, run the local CI equivalent: `go generate ./... && go build ./... && go test ./... && go vet ./... && go fix ./...` — and commit whatever `go generate` changed (README table, generated client), or CI's freshness check fails.
+- Before every push, run the local CI equivalent: `go generate ./... && go build ./... && go test ./... && go vet ./... && go fix ./...` — and commit whatever `go generate` changed (README table, generated client, agent skill), or CI's freshness check fails.
 - If `main` ever receives a direct hotfix, sync it back: `git checkout dev && git merge origin/main && git push`.
 
 ### 1. Start a feature (from fresh `dev`)

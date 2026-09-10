@@ -31,6 +31,28 @@ func TestResolveAlbumUserRole(t *testing.T) {
 	}
 }
 
+func TestResolveWorkflowTrigger(t *testing.T) {
+	for _, r := range []string{"AssetCreate", "AssetMetadataExtraction", "AssetTagged"} {
+		if _, err := resolveWorkflowTrigger(r); err != nil {
+			t.Errorf("resolveWorkflowTrigger(%q) unexpected error: %v", r, err)
+		}
+	}
+	if _, err := resolveWorkflowTrigger("assetcreate"); err == nil {
+		t.Error("resolveWorkflowTrigger(assetcreate) expected error, got nil")
+	}
+}
+
+func TestResolveWorkflowResult(t *testing.T) {
+	for _, r := range []string{"completed", "halted", "error"} {
+		if _, err := resolveWorkflowResult(r); err != nil {
+			t.Errorf("resolveWorkflowResult(%q) unexpected error: %v", r, err)
+		}
+	}
+	if _, err := resolveWorkflowResult("Completed"); err == nil {
+		t.Error("resolveWorkflowResult(Completed) expected error, got nil")
+	}
+}
+
 func TestChunkUUIDs(t *testing.T) {
 	ids := make([]openapi_types.UUID, 5)
 	for i := range ids {
