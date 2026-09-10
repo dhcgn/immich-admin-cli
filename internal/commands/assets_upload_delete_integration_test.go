@@ -13,9 +13,14 @@
 package commands
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha1"
 	"encoding/base64"
+	"image"
+	"image/color"
+	"image/png"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -36,15 +41,28 @@ import (
 // staging server URL and API key; the test skips when it is absent.
 const stagingConfigPath = "../../config.staging.yaml"
 
-// tinyPNG is a valid 1x1 transparent PNG — a hermetic upload fixture, no
-// dependency on .prod-test-data/.
-var tinyPNG = []byte{
-	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-	0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-	0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
-	0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
-	0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
-	0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+// writeRandomPNG writes a valid 1x1 PNG with a random pixel to path and
+// returns its bytes. Random content keeps every run unique so the server's
+// checksum-based duplicate detection never fires across runs — only the
+// test's own intentional re-upload of the same file may hit it. Hermetic,
+// no dependency on .prod-test-data/.
+func writeRandomPNG(t *testing.T, path string) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.RGBA{
+		R: byte(rand.Intn(256)),
+		G: byte(rand.Intn(256)),
+		B: byte(rand.Intn(256)),
+		A: 0xff,
+	})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encoding fixture PNG: %v", err)
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+	return buf.Bytes()
 }
 
 func TestAssetsUploadDeleteRoundtripIntegration(t *testing.T) {
@@ -63,9 +81,7 @@ func TestAssetsUploadDeleteRoundtripIntegration(t *testing.T) {
 	ctx := context.Background()
 
 	path := filepath.Join(t.TempDir(), "staging-upload-test.png")
-	if err := os.WriteFile(path, tinyPNG, 0o644); err != nil {
-		t.Fatalf("writing fixture: %v", err)
-	}
+	fixture := writeRandomPNG(t, path)
 
 	// Safety net: force-delete the upload even if the test fails halfway,
 	// so staging never keeps a leftover asset.
@@ -79,7 +95,8 @@ func TestAssetsUploadDeleteRoundtripIntegration(t *testing.T) {
 		if err == nil {
 			err = client.Check(resp, http.StatusNoContent)
 		}
-		if err != nil {
+		// "Not found" just means step 4 already deleted it — the common case.
+		if err != nil && !strings.Contains(err.Error(), "Not found") {
 			t.Logf("cleanup: deleting %s: %v", uploaded, err)
 		}
 	})
@@ -100,7 +117,7 @@ func TestAssetsUploadDeleteRoundtripIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAssetInfo(%s): %v", id, err)
 	}
-	sum := sha1.Sum(tinyPNG)
+	sum := sha1.Sum(fixture)
 	if want := base64.StdEncoding.EncodeToString(sum[:]); info.JSON200.Checksum != want {
 		t.Errorf("checksum = %q, want %q", info.JSON200.Checksum, want)
 	}
