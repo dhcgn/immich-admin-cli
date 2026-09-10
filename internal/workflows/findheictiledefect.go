@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -107,18 +106,18 @@ func FindAssetsWithHEICTileDefect(
 	}
 
 	var results []AssetHEICTileDefect
-	page := 1
+	var pager SearchPager
 	scanned := 0
 
 	for {
-		body.Page = &page
+		pager.Apply(&body)
 
 		resp, err := c.API.SearchAssetsWithResponse(ctx, &immichapi.SearchAssetsParams{}, body)
 		if err != nil {
-			return nil, fmt.Errorf("calling POST /search/metadata (page %d): %w", page, err)
+			return nil, fmt.Errorf("calling POST /search/metadata: %w", err)
 		}
 		if err := client.Check(resp, http.StatusOK); err != nil {
-			return nil, fmt.Errorf("POST /search/metadata (page %d): %w", page, err)
+			return nil, fmt.Errorf("POST /search/metadata: %w", err)
 		}
 
 		assets := resp.JSON200.Assets
@@ -146,14 +145,9 @@ func FindAssetsWithHEICTileDefect(
 			scanned, len(results),
 		)
 
-		if assets.NextPage == nil || *assets.NextPage == "" {
+		if !pager.Next(assets) {
 			break
 		}
-		nextPage, err := strconv.Atoi(*assets.NextPage)
-		if err != nil {
-			break
-		}
-		page = nextPage
 	}
 
 	// Clear the progress line.

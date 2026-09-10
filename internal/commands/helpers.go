@@ -29,6 +29,11 @@ func newClient(ctx context.Context, cmd *cli.Command) (*client.Client, error) {
 		return nil, err
 	}
 	c.PrintIdentity(ctx)
+	// Warn-only gate: an old server still runs (legacy fallbacks apply
+	// where they exist), but the user always sees the mismatch.
+	if err := c.CheckServerVersion(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠ %v\n", err)
+	}
 	return c, nil
 }
 

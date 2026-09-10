@@ -1195,7 +1195,7 @@ func validateDownloadAlbumAlbumFlags(albumIDStr, albumName string) error {
 func resolveDownloadAlbumSize(raw string) (immichapi.AssetMediaSize, error) {
 	size := immichapi.AssetMediaSize(raw)
 	if !size.Valid() {
-		return "", fmt.Errorf("invalid --size %q: must be one of %q, %q, %q, %q", raw, immichapi.Original, immichapi.Fullsize, immichapi.Preview, immichapi.Thumbnail)
+		return "", fmt.Errorf("invalid --size %q: must be one of %q, %q, %q, %q", raw, immichapi.AssetMediaSizeOriginal, immichapi.AssetMediaSizeFullsize, immichapi.AssetMediaSizePreview, immichapi.AssetMediaSizeThumbnail)
 	}
 	return size, nil
 }
@@ -1232,7 +1232,7 @@ func downloadAlbumCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:  "size",
 				Usage: "media variant to download: original, fullsize, preview, or thumbnail (see the AssetMediaSize spec enum)",
-				Value: string(immichapi.Preview),
+				Value: string(immichapi.AssetMediaSizePreview),
 			},
 			&cli.BoolFlag{
 				Name:  "ignore-videos",
@@ -1454,8 +1454,8 @@ func printDownloadSizePlan(opts workflows.DownloadAlbumOptions) {
 	fmt.Printf("Download plan: --size %s for photo/other assets\n", opts.Size)
 	switch {
 	case opts.ResizeVideo.Enabled:
-		fmt.Printf("  videos: downloaded as %s and re-encoded to MP4 via --resize-video-preset %s (regardless of --size above)\n", immichapi.Original, opts.ResizeVideo.Preset)
-	case opts.Size != immichapi.Original:
+		fmt.Printf("  videos: downloaded as %s and re-encoded to MP4 via --resize-video-preset %s (regardless of --size above)\n", immichapi.AssetMediaSizeOriginal, opts.ResizeVideo.Preset)
+	case opts.Size != immichapi.AssetMediaSizeOriginal:
 		fmt.Printf("  videos: downloaded as a static preview image (--size %s), NOT the real video — pass --size original or --resize-video-preset to get actual video content\n", opts.Size)
 	}
 	if opts.Resize.Enabled {

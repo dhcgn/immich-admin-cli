@@ -11,6 +11,7 @@ import (
 
 	"github.com/dhcgn/immich-admin-cli/internal/client"
 	"github.com/dhcgn/immich-admin-cli/internal/immichapi"
+	"github.com/dhcgn/immich-admin-cli/internal/workflows"
 )
 
 // Search returns the `search` command group (spec tag: Search).
@@ -149,11 +150,11 @@ func searchMetadata(ctx context.Context, cmd *cli.Command) error {
 	jsonMode := cmd.Bool("json")
 	idsOnly := cmd.Bool("ids-only")
 
-	page := 1
+	var pager workflows.SearchPager
 	totalPrinted := 0
 
 	for {
-		body.Page = &page
+		pager.Apply(body)
 
 		resp, err := c.API.SearchAssetsWithResponse(ctx, &immichapi.SearchAssetsParams{}, *body)
 		if err != nil {
@@ -186,21 +187,14 @@ func searchMetadata(ctx context.Context, cmd *cli.Command) error {
 
 		totalPrinted += len(assets.Items)
 
-		// Pagination: nextPage is the next page token; null means we're done.
-		if !fetchAll || assets.NextPage == nil || *assets.NextPage == "" {
+		// Pagination: cursor scheme (v3.2+) preferred, legacy page scheme
+		// (pre-3.2 servers) as fallback; either reports false when done.
+		if !fetchAll || !pager.Next(assets) {
 			if !jsonMode && !idsOnly {
-				fmt.Fprintf(cmd.Root().Writer, "--- %d asset(s) found (page %d) ---\n", totalPrinted, page)
+				fmt.Fprintf(cmd.Root().Writer, "--- %d asset(s) found (page %d) ---\n", totalPrinted, pager.Pages())
 			}
 			break
 		}
-
-		// Parse the next page number from the token (Immich returns it as a numeric string).
-		nextPage, err := strconv.Atoi(*assets.NextPage)
-		if err != nil {
-			// If it's not a plain integer token, stop — we can't continue safely.
-			break
-		}
-		page = nextPage
 	}
 
 	return nil
@@ -245,8 +239,10 @@ func buildMetadataSearchDto(cmd *cli.Command) (*immichapi.SearchAssetsJSONReques
 		body.Description = &v
 	}
 	if v := cmd.String("order"); v != "" {
+		// orderBy replaces the deprecated order field (v3.2+); Field stays
+		// nil so the server keeps its default sort field.
 		o := immichapi.AssetOrder(v)
-		body.Order = &o
+		body.OrderBy = &immichapi.SearchOrder{Direction: &o}
 	}
 	if err := setBoolFlag(cmd, "is-favorite", func(b bool) { body.IsFavorite = &b }); err != nil {
 		return nil, err
