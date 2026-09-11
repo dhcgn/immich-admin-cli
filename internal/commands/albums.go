@@ -66,6 +66,7 @@ func Albums() *cli.Command {
 				Action: albumsGet,
 			},
 			albumsAddUsersCommand(),
+			albumsRenameCommand(),
 		},
 	}
 }

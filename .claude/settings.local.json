@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p api internal/immichapi)",
+      "Bash(mv open-api-spec-of-immich/immich-openapi-specs.json api/)",
+      "Bash(mv open-api-spec-of-immich/download.ps1 api/)",
+      "Bash(mv open-api-spec-of-immich/oapi-codegen-config.yml api/)",
+      "Bash(mv open-api-spec-of-immich/generated/generate.go internal/immichapi/)",
+      "Bash(go generate *)",
+      "Bash(go build *)",
+      "Bash(go vet *)"
+    ]
+  }
+}
