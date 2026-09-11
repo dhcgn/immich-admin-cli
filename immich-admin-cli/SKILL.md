@@ -116,6 +116,14 @@ Args: `ALBUM_ID`
 - `--role` (string): album role to grant: editor, viewer, or owner [default: "viewer"]
 - `--dry-run` (bool): print the planned share without changing anything
 
+### albums rename
+
+Rename an album (PATCH /albums/{id})
+- `--name` (string): new album `NAME` [required]
+- `--album-id` (string): target album `UUID` (mutually exclusive with --album-name)
+- `--album-name` (string): target album's current name, exact match (mutually exclusive with --album-id)
+- `--dry-run` (bool): print the planned rename without changing anything
+
 ## search
 
 Search operations
