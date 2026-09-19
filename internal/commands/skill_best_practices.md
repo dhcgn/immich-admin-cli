@@ -118,6 +118,10 @@ albums separate, or rename instead of merging blindly. Always run
   `--sidecar`/`--filename` are single-file only; per-file byte bar on stderr, `--quiet` disables, `--json` implies quiet).
   `assets check-remote-exists FILE|DIR...` (alias `check-bulk-upload`) hashes locally and reports
   `uploaded <id>` / `missing` / `unsupported` without mutating (`--json`, `--ids-only -q` pipes duplicate IDs into `albums add-assets`/`tags tag`).
+- **Similarity**: `client-workflow find-similar FILE [--all] [--limit N] [--max-distance 0.01] [--type IMAGE] [--json] [-q]`
+  asks the external clip-probe service (https://github.com/dhcgn/immich-clip-probe/, configured via
+  `clip_probe.server`/`clip_probe.token` or `IMMICH_CLIP_PROBE_*` env) which library assets look like a local
+  file before uploading. Empty matches = nothing close enough (not an error).
 - **Watch**: `client-workflow watch-upload --watch-dir DIR --mode flat|by-subfolder [--tag-pattern "immich-admin-cli/watch/{yyyy-MM-dd}"] [--album-id|--album-name] --interval 60s --stable-for 10s [--once] [--dry-run] [--yes]`
   polls and uploads only stable files (bulk-check first; duplicates only linked; `--once` forces `--stable-for 0s`, i.e. uploads immediately).
   A finished folder that nothing is still writing into needs just `--once`; run the loop (no `--once`) only while files are still arriving.

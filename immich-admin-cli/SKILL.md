@@ -378,6 +378,17 @@ Move every asset from one album into another, optionally deleting the emptied so
 - `--dry-run` (bool): print the merge plan without changing anything
 - `--yes` (bool): skip the confirmation prompt before moving assets
 
+### client-workflow find-similar
+
+Find assets in Immich that look like a local image file (via clip-probe)
+Args: `FILE`
+- `--limit` (int): maximum number of matches to return (1-100) [default: 10]
+- `--max-distance` (float): cosine-distance cut-off; matches above this are dropped (0-2) [default: 0.01]
+- `--all` (bool): return the limit nearest matches regardless of --max-distance (for calibrating a threshold)
+- `--type` (string): restrict to a single asset type: IMAGE, VIDEO, or all [default: "IMAGE"]
+- `--json` (bool): print the raw clip-probe response as JSON
+- `--ids-only, -q` (bool): print only matching asset IDs, one per line
+
 ### client-workflow watch-upload
 
 Watch a folder and auto-upload new stable files (POST /assets/bulk-upload-check + POST /assets)
@@ -569,6 +580,10 @@ albums separate, or rename instead of merging blindly. Always run
   `--sidecar`/`--filename` are single-file only; per-file byte bar on stderr, `--quiet` disables, `--json` implies quiet).
   `assets check-remote-exists FILE|DIR...` (alias `check-bulk-upload`) hashes locally and reports
   `uploaded <id>` / `missing` / `unsupported` without mutating (`--json`, `--ids-only -q` pipes duplicate IDs into `albums add-assets`/`tags tag`).
+- **Similarity**: `client-workflow find-similar FILE [--all] [--limit N] [--max-distance 0.01] [--type IMAGE] [--json] [-q]`
+  asks the external clip-probe service (https://github.com/dhcgn/immich-clip-probe/, configured via
+  `clip_probe.server`/`clip_probe.token` or `IMMICH_CLIP_PROBE_*` env) which library assets look like a local
+  file before uploading. Empty matches = nothing close enough (not an error).
 - **Watch**: `client-workflow watch-upload --watch-dir DIR --mode flat|by-subfolder [--tag-pattern "immich-admin-cli/watch/{yyyy-MM-dd}"] [--album-id|--album-name] --interval 60s --stable-for 10s [--once] [--dry-run] [--yes]`
   polls and uploads only stable files (bulk-check first; duplicates only linked; `--once` forces `--stable-for 0s`, i.e. uploads immediately).
   A finished folder that nothing is still writing into needs just `--once`; run the loop (no `--once`) only while files are still arriving.

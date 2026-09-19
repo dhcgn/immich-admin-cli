@@ -17,3 +17,18 @@ api_key: YOUR_API_KEY_HERE
 #   # Used by `client-workflow download-album --resize-video-preset`.
 #   # Env var: IMMICH_FFMPEG_PATH
 #   ffmpeg_path: /usr/bin/ffmpeg
+
+# Optional: external visual-similarity service used by
+# `client-workflow find-similar`. This is the first command that depends on a
+# third-party service running next to Immich — setup:
+# https://github.com/dhcgn/immich-clip-probe/
+# Leave unset if unused; only `find-similar` requires it. Each field can
+# also be set via an environment variable instead (see comments below),
+# which takes precedence over this file.
+# clip_probe:
+#   # Origin of the clip-probe service (no /v1 suffix — the client appends
+#   # /v1/similar). Env var: IMMICH_CLIP_PROBE_SERVER
+#   server: https://clip-probe.example.com/
+#   # This service's own token (API_TOKEN), NOT an Immich API key.
+#   # Env var: IMMICH_CLIP_PROBE_TOKEN
+#   token: YOUR_CLIP_PROBE_TOKEN_HERE
