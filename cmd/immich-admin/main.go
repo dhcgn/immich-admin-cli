@@ -60,8 +60,22 @@ func main() {
 		},
 	}
 
+	if showsRootHelp(os.Args[1:]) {
+		// AI agents typically probe a CLI with no args or root help
+		// before their first real call: point them at the
+		// machine-readable skill. Stderr keeps help on stdout pipeable.
+		fmt.Fprintln(os.Stderr, "For AI agents: run `immich-admin return-agent-skill` for instructions on how to use this CLI.")
+	}
+
 	if err := root.Run(context.Background(), os.Args); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
+}
+
+// showsRootHelp reports whether args (without the program name) display
+// root help: no args, or exactly `help` / `--help` / `-h`. Pure so the
+// agent-hint trigger is directly unit-testable.
+func showsRootHelp(args []string) bool {
+	return len(args) == 0 || len(args) == 1 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h")
 }
