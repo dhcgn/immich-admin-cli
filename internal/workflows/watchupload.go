@@ -46,7 +46,10 @@ type WatchUploadStats struct {
 	LinkedDuplicate int `json:"linkedDuplicate"`
 	SkippedUnstable int `json:"skippedUnstable"`
 	Failed          int `json:"failed"`
-	SkippedDone     int `json:"-"`
+	// SkippedDone counts files already uploaded+linked in a previous run
+	// (recognized via the state file, no re-hash, no API call). Reported
+	// so re-runs show what happened instead of a silent all-zeros line.
+	SkippedDone int `json:"alreadyDone"`
 }
 
 // WatchFile is one candidate local file.
@@ -262,6 +265,13 @@ func RunWatchUploadOnce(ctx context.Context, c *client.Client, opts WatchUploadO
 	files, err := ScanWatchDir(opts.WatchDir, opts.Mode, opts.Depth)
 	if err != nil {
 		return stats, err
+	}
+	if len(files) == 0 {
+		scope := "top-level files"
+		if opts.Mode == "by-subfolder" {
+			scope = "files directly inside immediate subfolders"
+		}
+		fmt.Fprintf(os.Stderr, "warning: no files found in %q (--mode %s scans %s only; hidden files and symlinks are skipped)\n", opts.WatchDir, opts.Mode, scope)
 	}
 
 	st, err := loadWatchUploadState(opts.WatchDir)

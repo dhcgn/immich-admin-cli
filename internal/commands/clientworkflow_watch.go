@@ -196,8 +196,8 @@ func printWatchUploadSummary(stats workflows.WatchUploadStats, asJSON bool) {
 		_ = enc.Encode(stats)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "uploaded=%d linked-duplicate=%d skipped-unstable=%d failed=%d\n",
-		stats.Uploaded, stats.LinkedDuplicate, stats.SkippedUnstable, stats.Failed)
+	fmt.Fprintf(os.Stderr, "uploaded=%d linked-duplicate=%d skipped-unstable=%d already-done=%d failed=%d\n",
+		stats.Uploaded, stats.LinkedDuplicate, stats.SkippedUnstable, stats.SkippedDone, stats.Failed)
 }
 
 func clientWorkflowWatchDownload(ctx context.Context, cmd *cli.Command) error {
