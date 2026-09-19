@@ -108,6 +108,15 @@ Args: `[ALBUM_ID ...]`
 - `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
 - `--json` (bool): print the raw responses as a JSON array
 
+### albums assets
+
+List every asset in one album (POST /search/metadata)
+- `--album-id` (string): album `UUID` (mutually exclusive with --album-name)
+- `--album-name` (string): album name, exact match (mutually exclusive with --album-id)
+- `--json` (bool): print the raw responses as a JSON array
+- `--ids-only, -q` (bool): print only asset IDs, one per line (useful for piping to other commands)
+- `--yes` (bool): auto-accept a whitespace-variant album name match without prompting
+
 ### albums add-users
 
 Share an album with a user (PUT /albums/{id}/users)
@@ -477,7 +486,7 @@ immich-admin assets info --ids-file ids.txt
   uploads, checksum-verifies, copies metadata (albums, favorite, shared
   links, sidecar, stack), then trashes the original. Aborts on checksum
   duplicates instead of touching the wrong asset.
-- **Albums**: `albums create --name [--description]`; `albums add-assets /
+- **Albums**: `albums create --name [--description]`; `albums assets --album-id/--album-name [--json] [-q]` lists every asset (pipe `-q` into `add/remove-assets --ids-file -`); `albums add-assets /
   remove-assets ALBUM_ID [--ids-file] [--dry-run] [--yes]` (reports
   added-or-removed / already-present / not-found per ID); `albums delete
   [--force]` (refuses non-empty albums without `--force`; the server trashes

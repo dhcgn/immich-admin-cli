@@ -49,7 +49,7 @@ func MergeAlbums(ctx context.Context, c *client.Client, opts MergeAlbumOptions) 
 		return err
 	}
 
-	assets, err := fetchAlbumAssets(ctx, c, opts.From)
+	assets, err := FetchAlbumAssets(ctx, c, opts.From)
 	if err != nil {
 		return err
 	}

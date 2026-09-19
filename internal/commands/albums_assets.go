@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -170,5 +171,83 @@ func reportAlbumBulkResults(past string, results []immichapi.BulkIdResponseDto) 
 	if len(t.failures) > 0 {
 		return fmt.Errorf("%d of %d assets failed", len(t.failures), len(results))
 	}
+	return nil
+}
+
+// albumsAssetsCommand lists every asset in one album. GET /albums/{id}
+// carries no asset list, so this runs the album-scoped metadata search
+// (POST /search/metadata) via workflows.FetchAlbumAssets.
+func albumsAssetsCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "assets",
+		Usage: "List every asset in one album (POST /search/metadata)",
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "album-id", Usage: "album `UUID` (mutually exclusive with --album-name)"},
+			&cli.StringFlag{Name: "album-name", Usage: "album name, exact match (mutually exclusive with --album-id)"},
+			&cli.BoolFlag{Name: "json", Usage: "print the raw responses as a JSON array"},
+			&cli.BoolFlag{
+				Name:    "ids-only",
+				Aliases: []string{"q"},
+				Usage:   "print only asset IDs, one per line (useful for piping to other commands)",
+			},
+			&cli.BoolFlag{Name: "yes", Usage: "auto-accept a whitespace-variant album name match without prompting"},
+		},
+		Action: albumsAssets,
+	}
+}
+
+func albumsAssets(ctx context.Context, cmd *cli.Command) error {
+	albumIDStr := cmd.String("album-id")
+	albumName := cmd.String("album-name")
+	if err := validateAlbumIDNameFlags(albumIDStr, albumName); err != nil {
+		return err
+	}
+
+	c, err := newClient(ctx, cmd)
+	if err != nil {
+		return err
+	}
+
+	var album immichapi.AlbumResponseDto
+	if albumIDStr != "" {
+		id, err := uuid.Parse(albumIDStr)
+		if err != nil {
+			return fmt.Errorf("invalid --album-id %q: %w", albumIDStr, err)
+		}
+		uid := openapi_types.UUID(id)
+		album, err = workflows.ResolveAlbum(ctx, c, &uid, "")
+		if err != nil {
+			return err
+		}
+	} else {
+		album, err = resolveAlbumByName(ctx, c, os.Stdin, os.Stdout, albumName, cmd.Bool("yes"))
+		if err != nil {
+			return err
+		}
+	}
+
+	assets, err := workflows.FetchAlbumAssets(ctx, c, album.Id)
+	if err != nil {
+		return err
+	}
+	if assets == nil {
+		assets = []immichapi.AssetResponseDto{}
+	}
+
+	if cmd.Bool("json") {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(assets)
+	}
+	if cmd.Bool("ids-only") {
+		for _, a := range assets {
+			fmt.Println(a.Id)
+		}
+		return nil
+	}
+	for _, a := range assets {
+		fmt.Printf("%s\t%s\t%s\n", a.Id, a.OriginalFileName, a.Type)
+	}
+	fmt.Printf("%d asset(s) in album %s %q\n", len(assets), album.Id, album.AlbumName)
 	return nil
 }

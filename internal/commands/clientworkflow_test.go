@@ -211,7 +211,7 @@ func TestFixableCount(t *testing.T) {
 	}
 }
 
-func TestValidateDownloadAlbumAlbumFlags(t *testing.T) {
+func TestValidateAlbumIDNameFlags(t *testing.T) {
 	tests := []struct {
 		name      string
 		albumID   string
@@ -225,9 +225,9 @@ func TestValidateDownloadAlbumAlbumFlags(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validateDownloadAlbumAlbumFlags(tc.albumID, tc.albumName)
+			err := validateAlbumIDNameFlags(tc.albumID, tc.albumName)
 			if (err != nil) != tc.wantErr {
-				t.Errorf("validateDownloadAlbumAlbumFlags(%q, %q) error = %v, wantErr %v", tc.albumID, tc.albumName, err, tc.wantErr)
+				t.Errorf("validateAlbumIDNameFlags(%q, %q) error = %v, wantErr %v", tc.albumID, tc.albumName, err, tc.wantErr)
 			}
 		})
 	}
