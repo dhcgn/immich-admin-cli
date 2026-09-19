@@ -1,7 +1,9 @@
 package commands
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -101,7 +103,7 @@ func clientWorkflowFindSimilar(ctx context.Context, cmd *cli.Command) error {
 
 	switch {
 	case cmd.Bool("json"):
-		fmt.Println(string(raw))
+		fmt.Println(formatJSON(raw))
 	case cmd.Bool("ids-only"):
 		for _, m := range resp.Matches {
 			fmt.Println(m.AssetID)
@@ -119,4 +121,15 @@ func clientWorkflowFindSimilar(ctx context.Context, cmd *cli.Command) error {
 		}
 	}
 	return nil
+}
+
+// formatJSON pretty-prints a raw JSON response for --json output. Unparseable
+// input falls back to the raw string (never fails a read-only command on a
+// formatting issue). Pure so it is directly unit-testable.
+func formatJSON(raw []byte) string {
+	var out bytes.Buffer
+	if err := json.Indent(&out, raw, "", "  "); err != nil {
+		return string(raw)
+	}
+	return out.String()
 }
