@@ -111,6 +111,33 @@ func waitAlbumGone(t *testing.T, ctx context.Context, c *client.Client, id opena
 	}
 }
 
+// assetIDs extracts the IDs from asset DTOs.
+func assetIDs(assets []immichapi.AssetResponseDto) []openapi_types.UUID {
+	ids := make([]openapi_types.UUID, 0, len(assets))
+	for _, a := range assets {
+		ids = append(ids, a.Id)
+	}
+	return ids
+}
+
+// sameUUIDSet reports whether got and want hold the same IDs (order-free).
+func sameUUIDSet(got, want []openapi_types.UUID) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	seen := make(map[openapi_types.UUID]int, len(got))
+	for _, id := range got {
+		seen[id]++
+	}
+	for _, id := range want {
+		if seen[id] == 0 {
+			return false
+		}
+		seen[id]--
+	}
+	return true
+}
+
 func TestAlbumAssetsManageRoundtripIntegration(t *testing.T) {
 	c := stagingTestClient(t)
 	ctx := context.Background()
@@ -135,6 +162,15 @@ func TestAlbumAssetsManageRoundtripIntegration(t *testing.T) {
 	}
 	if got := albumAssetCount(t, ctx, c, album); got != 2 {
 		t.Fatalf("AssetCount = %d, want 2", got)
+	}
+
+	// 1b. Listing (the `albums assets` seam) returns exactly those two IDs.
+	listed, err := workflows.FetchAlbumAssets(ctx, c, album)
+	if err != nil {
+		t.Fatalf("FetchAlbumAssets: %v", err)
+	}
+	if ids := assetIDs(listed); !sameUUIDSet(ids, []openapi_types.UUID{asset1, asset2}) {
+		t.Fatalf("FetchAlbumAssets = %v, want [%s %s]", ids, asset1, asset2)
 	}
 
 	// 2. Re-adding reports duplicates instead of failing.
@@ -164,6 +200,13 @@ func TestAlbumAssetsManageRoundtripIntegration(t *testing.T) {
 	}
 	if got := albumAssetCount(t, ctx, c, album); got != 1 {
 		t.Fatalf("AssetCount = %d, want 1", got)
+	}
+	listed, err = workflows.FetchAlbumAssets(ctx, c, album)
+	if err != nil {
+		t.Fatalf("FetchAlbumAssets after remove: %v", err)
+	}
+	if ids := assetIDs(listed); !sameUUIDSet(ids, []openapi_types.UUID{asset2}) {
+		t.Fatalf("FetchAlbumAssets after remove = %v, want [%s]", ids, asset2)
 	}
 
 	// 4. Delete the album (DELETE /albums/{id}) and wait for it to vanish.

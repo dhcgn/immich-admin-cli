@@ -1282,10 +1282,10 @@ func repairScanNoThumbhash(ctx context.Context, c *client.Client, opts workflows
 	return ids, nil
 }
 
-// validateDownloadAlbumAlbumFlags ensures exactly one of --album-id /
+// validateAlbumIDNameFlags ensures exactly one of --album-id /
 // --album-name was given, extracted as a pure function so it is directly
 // unit-testable without spinning up a full CLI command run.
-func validateDownloadAlbumAlbumFlags(albumIDStr, albumName string) error {
+func validateAlbumIDNameFlags(albumIDStr, albumName string) error {
 	if (albumIDStr == "") == (albumName == "") {
 		return fmt.Errorf("exactly one of --album-id or --album-name is required")
 	}
@@ -1441,7 +1441,7 @@ func clientWorkflowDownloadAlbum(ctx context.Context, cmd *cli.Command) error {
 
 	albumIDStr := cmd.String("album-id")
 	albumName := cmd.String("album-name")
-	if err := validateDownloadAlbumAlbumFlags(albumIDStr, albumName); err != nil {
+	if err := validateAlbumIDNameFlags(albumIDStr, albumName); err != nil {
 		return err
 	}
 

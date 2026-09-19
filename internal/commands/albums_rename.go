@@ -85,5 +85,5 @@ func validateAlbumRenameFlags(newName, albumIDStr, albumName string) error {
 	if strings.TrimSpace(newName) == "" {
 		return fmt.Errorf("--name is required: new album name must not be empty")
 	}
-	return validateDownloadAlbumAlbumFlags(albumIDStr, albumName)
+	return validateAlbumIDNameFlags(albumIDStr, albumName)
 }

@@ -126,7 +126,7 @@ func CheckAlbumDates(ctx context.Context, c *client.Client, opts FixAlbumDatesOp
 	for _, a := range albums {
 		pattern, _ := parseAlbumDatePattern(a.AlbumName)
 
-		assets, err := fetchAlbumAssets(ctx, c, a.Id)
+		assets, err := FetchAlbumAssets(ctx, c, a.Id)
 		if err != nil {
 			return nil, fmt.Errorf("fetching assets for album %q: %w", a.AlbumName, err)
 		}
@@ -168,11 +168,11 @@ func deviationFromRange(t time.Time, p AlbumDatePattern) time.Duration {
 	return 0
 }
 
-// fetchAlbumAssets returns every asset in albumID via the album-scoped
+// FetchAlbumAssets returns every asset in albumID via the album-scoped
 // metadata search (POST /search/metadata, MetadataSearchDto.AlbumIds),
 // following the result cursor until exhausted. AlbumResponseDto itself
 // carries no assets list in this API version.
-func fetchAlbumAssets(ctx context.Context, c *client.Client, albumID openapi_types.UUID) ([]immichapi.AssetResponseDto, error) {
+func FetchAlbumAssets(ctx context.Context, c *client.Client, albumID openapi_types.UUID) ([]immichapi.AssetResponseDto, error) {
 	var assets []immichapi.AssetResponseDto
 	var pager SearchPager
 	size := 250

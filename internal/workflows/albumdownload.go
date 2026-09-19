@@ -461,7 +461,7 @@ func ResolveAlbum(ctx context.Context, c *client.Client, albumID *openapi_types.
 // FetchFilteredAlbumAssets fetches every asset in albumID (paginated) and,
 // if ignoreVideos, drops VIDEO assets.
 func FetchFilteredAlbumAssets(ctx context.Context, c *client.Client, albumID openapi_types.UUID, ignoreVideos bool) ([]immichapi.AssetResponseDto, error) {
-	assets, err := fetchAlbumAssets(ctx, c, albumID)
+	assets, err := FetchAlbumAssets(ctx, c, albumID)
 	if err != nil {
 		return nil, err
 	}
