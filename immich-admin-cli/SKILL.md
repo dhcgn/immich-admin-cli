@@ -41,6 +41,7 @@ Download original asset files (GET /assets/{id}/original)
 Args: `[ASSET_ID ...]`
 - `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
 - `--out-dir` (string): directory to save downloaded files into (default: current working directory)
+- `--quiet` (bool): disable per-file progress bars on stderr
 
 ### assets download-thumbnail
 
@@ -50,6 +51,7 @@ Args: `[ASSET_ID ...]`
 - `--out-dir` (string): directory to save downloaded files into (default: current working directory)
 - `--size` (string): media size: fullsize, preview, or thumbnail (see the AssetMediaSize spec enum; 'original' is not accepted here — the spec deprecates size=original on this endpoint, use 'assets download-original' instead) [default: "preview"]
 - `--edited` (bool): return the edited version of the asset if available
+- `--quiet` (bool): disable per-file progress bars on stderr
 
 ### assets upload
 
@@ -67,6 +69,16 @@ Args: `[FILE ...]`
 - `--slug` (string): shared-link slug (query param)
 - `--checksum` (string): sha1 checksum for duplicate detection before upload (x-immich-checksum header)
 - `--json` (bool): print results as a JSON array
+- `--quiet` (bool): disable per-file progress bars on stderr (--json implies quiet)
+
+### assets check-remote-exists (alias: check-bulk-upload)
+
+Check if local files already exist on the server via checksum (POST /assets/bulk-upload-check)
+Args: `[FILE|DIR ...]`
+- `--json` (bool): print results as a JSON array
+- `--duplicates-only` (bool): show only files already on the server
+- `--missing-only` (bool): show only files missing on the server
+- `--ids-only, -q` (bool): print only duplicate asset IDs, one per line (pipeable into albums add-assets / tags tag)
 
 ### assets delete
 
@@ -355,6 +367,7 @@ Download all original files or a smaller variant (preview/thumbnail/fullsize) fr
 - `--resize-video-preset` (string): re-encode every downloaded VIDEO asset using ffmpeg (path from config tools.ffmpeg_path or IMMICH_FFMPEG_PATH, falling back to PATH); videos are always fetched at --size original for this regardless of --size (many videos have no usable preview/thumbnail rendition, and ffmpeg needs the real stream anyway) — only non-video assets use --size; valid presets: 1080p-web-friendly
 - `--dry-run` (bool): print the planned downloads/deletions without changing anything
 - `--yes` (bool): skip the confirmation prompt before deleting local files (--sync only)
+- `--quiet` (bool): disable per-file progress bars on stderr
 
 ### client-workflow merge-album
 
@@ -364,6 +377,39 @@ Move every asset from one album into another, optionally deleting the emptied so
 - `--delete-empty-source` (bool): delete the source album when it holds no assets after the move
 - `--dry-run` (bool): print the merge plan without changing anything
 - `--yes` (bool): skip the confirmation prompt before moving assets
+
+### client-workflow watch-upload
+
+Watch a folder and auto-upload new stable files (POST /assets/bulk-upload-check + POST /assets)
+- `--watch-dir` (string): local directory to watch [required]
+- `--mode` (string): flat or by-subfolder [default: "flat"]
+- `--tag-pattern` (string): tag pattern for --mode flat ({yyyy-MM-dd} = upload day) [default: "immich-admin-cli/watch/{yyyy-MM-dd}"]
+- `--depth` (int): subfolder depth (v1: only 1 supported) [default: 1]
+- `--album-id` (string): opt-in album `ID` to also add uploads to
+- `--album-name` (string): opt-in album name to also add uploads to (created unless --dry-run)
+- `--interval` (string): poll interval (e.g. 60s); <=0 means run once [default: "60s"]
+- `--stable-for` (string): defer files changed within this long (e.g. 30s) [default: "30s"]
+- `--once` (bool): run a single scan and exit (for cron)
+- `--dry-run` (bool): print what would be uploaded/linked without changing anything
+- `--yes` (bool): skip creation prompts for tags/albums
+- `--quiet` (bool): disable per-file progress bars on stderr (--json implies quiet)
+- `--json` (bool): print per-interval stats as JSON on stdout
+
+### client-workflow watch-download
+
+Keep a local folder in sync from an album or tag (loop around download-album --sync)
+- `--album-id` (string): album `ID` source (mutually exclusive with --album-name/--tag-*)
+- `--album-name` (string): album name source
+- `--tag-id` (string): tag `ID` source (mutually exclusive with --tag-value/album-*)
+- `--tag-value` (string): tag value (full path) source
+- `--target-dir` (string): local directory to sync into (created if missing) [required]
+- `--size` (string): media variant: original, fullsize, preview, or thumbnail [default: "original"]
+- `--interval` (string): poll interval (e.g. 300s); <=0 means run once [default: "300s"]
+- `--once` (bool): run a single sync and exit (for cron)
+- `--dry-run` (bool): print the planned sync without changing anything
+- `--yes` (bool): skip the deletion confirmation prompt
+- `--quiet` (bool): disable per-file progress bars on stderr (--json implies quiet)
+- `--json` (bool): print per-interval stats as JSON on stdout
 
 ## immich-workflow
 
@@ -520,4 +566,9 @@ albums separate, or rename instead of merging blindly. Always run
   `client-workflow tag-delete --include/--exclude` for regex bulk deletion
   (permanent — dry-run first).
 - **Upload**: `assets upload FILE...` (timestamps default to file mtime;
-  `--sidecar`/`--filename` are single-file only).
+  `--sidecar`/`--filename` are single-file only; per-file byte bar on stderr, `--quiet` disables, `--json` implies quiet).
+  `assets check-remote-exists FILE|DIR...` (alias `check-bulk-upload`) hashes locally and reports
+  `uploaded <id>` / `missing` / `unsupported` without mutating (`--json`, `--ids-only -q` pipes duplicate IDs into `albums add-assets`/`tags tag`).
+- **Watch**: `client-workflow watch-upload --watch-dir DIR --mode flat|by-subfolder [--tag-pattern "immich-admin-cli/watch/{yyyy-MM-dd}"] [--album-id|--album-name] --interval 60s --stable-for 30s [--once] [--dry-run] [--yes]`
+  polls and uploads only stable files (bulk-check first; duplicates only linked). `client-workflow watch-download (--album-id|--album-name|--tag-id|--tag-value) --target-dir DIR --size original --interval 300s [--once]`
+  loops the `.immich-sync.json` manifest sync (album or tag source). `--interval <=0` means run once. Per-interval one-line summary on stderr; `--json` prints JSON stats on stdout.

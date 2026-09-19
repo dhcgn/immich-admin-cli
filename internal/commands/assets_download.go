@@ -30,6 +30,7 @@ func assetsDownloadCommand() *cli.Command {
 				Name:  "out-dir",
 				Usage: "directory to save downloaded files into (default: current working directory)",
 			},
+			&cli.BoolFlag{Name: "quiet", Usage: "disable per-file progress bars on stderr"},
 		},
 		Action: assetsDownloadOriginal,
 	}
@@ -56,8 +57,10 @@ func assetsDownloadOriginal(ctx context.Context, cmd *cli.Command) error {
 	// Fan out over the single-asset download endpoint: continue on per-ID
 	// errors and report failures at the end (same convention as assetsInfo).
 	failures := 0
-	for _, id := range ids {
-		if err := downloadOneAsset(ctx, c, id, outDir); err != nil {
+	quiet := cmd.Bool("quiet")
+	for i, id := range ids {
+		prog := workflows.NewByteProgress(id.String(), -1, i+1, len(ids), quiet)
+		if err := downloadOneAsset(ctx, c, id, outDir, prog); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: asset %s: %v\n", id, err)
 			failures++
 			continue
@@ -70,7 +73,7 @@ func assetsDownloadOriginal(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-func downloadOneAsset(ctx context.Context, c *client.Client, id openapi_types.UUID, outDir string) error {
+func downloadOneAsset(ctx context.Context, c *client.Client, id openapi_types.UUID, outDir string, prog *workflows.ByteProgress) error {
 	infoResp, err := c.API.GetAssetInfoWithResponse(ctx, id, nil)
 	if err == nil {
 		err = client.Check(infoResp, http.StatusOK)
@@ -97,13 +100,28 @@ func downloadOneAsset(ctx context.Context, c *client.Client, id openapi_types.UU
 	idStr := id.String()
 	destPath := filepath.Join(outDir, idStr+"_"+originalFileName)
 
+	if prog != nil {
+		prog.Label = originalFileName
+		prog.Total = resp.ContentLength
+		if prog.Total <= 0 {
+			prog.Total = -1
+		}
+	}
+
 	f, err := os.Create(destPath)
 	if err != nil {
 		return fmt.Errorf("creating output file %q: %w", destPath, err)
 	}
 	defer f.Close()
 
-	written, err := io.Copy(f, resp.Body)
+	var src io.Reader = resp.Body
+	if prog != nil {
+		src = prog.Wrap(resp.Body)
+	}
+	written, err := io.Copy(f, src)
+	if prog != nil {
+		prog.Finish()
+	}
 	if err != nil {
 		return fmt.Errorf("writing output file %q: %w", destPath, err)
 	}
@@ -149,6 +167,7 @@ func assetsDownloadThumbnailCommand() *cli.Command {
 				Name:  "edited",
 				Usage: "return the edited version of the asset if available",
 			},
+			&cli.BoolFlag{Name: "quiet", Usage: "disable per-file progress bars on stderr"},
 		},
 		Action: assetsDownloadThumbnail,
 	}
@@ -187,8 +206,10 @@ func assetsDownloadThumbnail(ctx context.Context, cmd *cli.Command) error {
 	// Fan out over the single-asset endpoint: continue on per-ID errors and
 	// report failures at the end (same convention as assetsDownloadOriginal).
 	failures := 0
-	for _, id := range ids {
-		if err := downloadOneThumbnail(ctx, c, id, outDir, params); err != nil {
+	quiet := cmd.Bool("quiet")
+	for i, id := range ids {
+		prog := workflows.NewByteProgress(id.String(), -1, i+1, len(ids), quiet)
+		if err := downloadOneThumbnail(ctx, c, id, outDir, params, prog); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: asset %s: %v\n", id, err)
 			failures++
 			continue
@@ -201,7 +222,7 @@ func assetsDownloadThumbnail(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-func downloadOneThumbnail(ctx context.Context, c *client.Client, id openapi_types.UUID, outDir string, params *immichapi.ViewAssetParams) error {
+func downloadOneThumbnail(ctx context.Context, c *client.Client, id openapi_types.UUID, outDir string, params *immichapi.ViewAssetParams, prog *workflows.ByteProgress) error {
 	infoResp, err := c.API.GetAssetInfoWithResponse(ctx, id, nil)
 	if err == nil {
 		err = client.Check(infoResp, http.StatusOK)
@@ -232,13 +253,28 @@ func downloadOneThumbnail(ctx context.Context, c *client.Client, id openapi_type
 	idStr := id.String()
 	destPath := filepath.Join(outDir, idStr+"_"+baseName+ext)
 
+	if prog != nil {
+		prog.Label = baseName + ext
+		prog.Total = resp.ContentLength
+		if prog.Total <= 0 {
+			prog.Total = -1
+		}
+	}
+
 	f, err := os.Create(destPath)
 	if err != nil {
 		return fmt.Errorf("creating output file %q: %w", destPath, err)
 	}
 	defer f.Close()
 
-	written, err := io.Copy(f, resp.Body)
+	var src io.Reader = resp.Body
+	if prog != nil {
+		src = prog.Wrap(resp.Body)
+	}
+	written, err := io.Copy(f, src)
+	if prog != nil {
+		prog.Finish()
+	}
 	if err != nil {
 		return fmt.Errorf("writing output file %q: %w", destPath, err)
 	}

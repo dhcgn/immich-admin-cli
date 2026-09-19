@@ -29,20 +29,35 @@ import (
 // ManifestFileName is the hidden per-target-directory state file written by
 // --sync mode (see Manifest). It never appears among the downloaded media
 // files, and no other command reads or writes it.
-const ManifestFileName = ".immich-album-sync.json"
+const ManifestFileName = ".immich-sync.json"
+
+// legacyManifestFileName is the pre-watch filename. LoadManifest falls back
+// to it when the new file is missing and SaveManifest migrates forward.
+const legacyManifestFileName = ".immich-album-sync.json"
 
 const manifestVersion = 1
 
-// Manifest tracks, for one target directory, the album and files
+// Sync source kinds for Manifest.SourceKind.
+const (
+	SourceKindAlbum = "album"
+	SourceKindTag   = "tag"
+)
+
+// Manifest tracks, for one target directory, the album/tag and files
 // SyncAlbum/ApplyAlbumSync downloaded there, so later runs can detect
 // changes (re-download) and removals (delete locally) — and, just as
 // importantly, so files not tracked here (anything the user placed in the
-// folder themselves, or files from an unrelated album) are never touched.
+// folder themselves, or files from an unrelated source) are never touched.
 type Manifest struct {
-	Version   int                      `json:"version"`
-	AlbumID   string                   `json:"albumId"`
-	AlbumName string                   `json:"albumName"`
-	Size      immichapi.AssetMediaSize `json:"size"`
+	Version   int    `json:"version"`
+	AlbumID   string `json:"albumId,omitempty"`
+	AlbumName string `json:"albumName,omitempty"`
+	// SourceKind is "album" or "tag". Empty means a legacy album manifest
+	// (written before tag sources existed); see normalizedSource.
+	SourceKind string                   `json:"sourceKind,omitempty"`
+	SourceID   string                   `json:"sourceId,omitempty"`
+	SourceName string                   `json:"sourceName,omitempty"`
+	Size       immichapi.AssetMediaSize `json:"size"`
 	// Resize, ResizeVideoPreset, and TimestampPrefix record whether this
 	// target directory was built with --resize / --resize-video-preset /
 	// --timestamp-prefix, mirroring the Size guard: all change the local
@@ -56,6 +71,27 @@ type Manifest struct {
 	TimestampPrefix   bool   `json:"timestampPrefix"`
 	// Assets is keyed by asset ID (string form of openapi_types.UUID).
 	Assets map[string]ManifestAsset `json:"assets"`
+}
+
+// normalizedSource returns the canonical (kind, id, name) triple,
+// migrating legacy album-only manifests (AlbumID set, SourceKind empty).
+func (m Manifest) normalizedSource() (kind, id, name string) {
+	if m.SourceKind != "" {
+		return m.SourceKind, m.SourceID, m.SourceName
+	}
+	if m.AlbumID != "" {
+		return SourceKindAlbum, m.AlbumID, m.AlbumName
+	}
+	return "", "", ""
+}
+
+// stampSource sets both the new Source* fields and the legacy Album*
+// fields (for album sources, so old readers still see them).
+func (m *Manifest) stampSource(kind, id, name string) {
+	m.SourceKind, m.SourceID, m.SourceName = kind, id, name
+	if kind == SourceKindAlbum {
+		m.AlbumID, m.AlbumName = id, name
+	}
 }
 
 // ManifestAsset is one asset SyncAlbum is tracking in a target directory.
@@ -102,6 +138,9 @@ type DownloadAlbumOptions struct {
 	// DryRun previews the planned actions without downloading, deleting, or
 	// writing the manifest.
 	DryRun bool
+	// Quiet disables per-file byte progress bars on stderr
+	// (--json implies quiet at the command layer).
+	Quiet bool
 }
 
 // DefaultResizeQuality is the JPEG quality used by --resize when
@@ -360,15 +399,21 @@ func baseNameOf(fileName string) string {
 	return strings.TrimSuffix(fileName, filepath.Ext(fileName))
 }
 
-// LoadManifest reads ManifestFileName from targetDir. A missing file is not
-// an error: it returns a zero-value Manifest (with an initialized Assets
-// map) and existed=false, the normal state for a brand-new target
-// directory or the first ever --sync run against it.
+// LoadManifest reads ManifestFileName from targetDir, falling back to the
+// legacy album filename. A missing file is not an error: it returns a
+// zero-value Manifest (with an initialized Assets map) and existed=false,
+// the normal state for a brand-new target directory or the first ever
+// --sync run against it.
 func LoadManifest(targetDir string) (m Manifest, existed bool, err error) {
 	path := filepath.Join(targetDir, ManifestFileName)
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return Manifest{Assets: map[string]ManifestAsset{}}, false, nil
+		legacy := filepath.Join(targetDir, legacyManifestFileName)
+		data, err = os.ReadFile(legacy)
+		if errors.Is(err, os.ErrNotExist) {
+			return Manifest{Assets: map[string]ManifestAsset{}}, false, nil
+		}
+		path = legacy
 	}
 	if err != nil {
 		return Manifest{}, false, fmt.Errorf("reading manifest %q: %w", path, err)
@@ -378,6 +423,9 @@ func LoadManifest(targetDir string) (m Manifest, existed bool, err error) {
 	}
 	if m.Assets == nil {
 		m.Assets = map[string]ManifestAsset{}
+	}
+	if m.SourceKind == "" && m.AlbumID != "" {
+		m.SourceKind, m.SourceID, m.SourceName = SourceKindAlbum, m.AlbumID, m.AlbumName
 	}
 	return m, true, nil
 }
@@ -390,6 +438,11 @@ func LoadManifest(targetDir string) (m Manifest, existed bool, err error) {
 // never loses more than the one in-flight item's progress.
 func SaveManifest(targetDir string, m Manifest) error {
 	m.Version = manifestVersion
+	if m.SourceKind != "" && m.SourceID != "" && m.SourceKind == SourceKindAlbum {
+		m.AlbumID, m.AlbumName = m.SourceID, m.SourceName
+	} else if m.SourceKind == "" && m.AlbumID != "" {
+		m.SourceKind, m.SourceID, m.SourceName = SourceKindAlbum, m.AlbumID, m.AlbumName
+	}
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encoding manifest: %w", err)
@@ -412,6 +465,10 @@ func SaveManifest(targetDir string, m Manifest) error {
 	if err := os.Rename(tmpPath, path); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("writing manifest %q: %w", path, err)
+	}
+	// Best-effort migration: drop the legacy file once the new one lands.
+	if path != filepath.Join(targetDir, legacyManifestFileName) {
+		os.Remove(filepath.Join(targetDir, legacyManifestFileName))
 	}
 	return nil
 }
@@ -475,20 +532,25 @@ func FetchFilteredAlbumAssets(ctx context.Context, c *client.Client, albumID ope
 // variant, per size) and returns its body stream (caller must close it)
 // plus the file extension to use: the original file's own extension for
 // immichapi.AssetMediaSizeOriginal, or sniffed from the actual response Content-Type for
-// every other variant (see ExtensionForContentType).
-func fetchAssetStream(ctx context.Context, c *client.Client, a immichapi.AssetResponseDto, size immichapi.AssetMediaSize) (io.ReadCloser, string, error) {
+// every other variant (see ExtensionForContentType). Length is the response
+// ContentLength, or -1 when unknown (chunked).
+func fetchAssetStream(ctx context.Context, c *client.Client, a immichapi.AssetResponseDto, size immichapi.AssetMediaSize) (io.ReadCloser, string, int64, error) {
 	switch size {
 	case immichapi.AssetMediaSizeOriginal:
 		resp, err := c.API.DownloadAsset(ctx, a.Id, nil)
 		if err != nil {
-			return nil, "", fmt.Errorf("downloading original: %w", err)
+			return nil, "", -1, fmt.Errorf("downloading original: %w", err)
 		}
 		if resp.StatusCode != http.StatusOK {
 			defer resp.Body.Close()
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-			return nil, "", fmt.Errorf("server returned %s (expected 200): %s", resp.Status, strings.TrimSpace(string(body)))
+			return nil, "", -1, fmt.Errorf("server returned %s (expected 200): %s", resp.Status, strings.TrimSpace(string(body)))
 		}
-		return resp.Body, filepath.Ext(a.OriginalFileName), nil
+		length := resp.ContentLength
+		if length <= 0 {
+			length = -1
+		}
+		return resp.Body, filepath.Ext(a.OriginalFileName), length, nil
 
 	case immichapi.AssetMediaSizeFullsize, immichapi.AssetMediaSizePreview, immichapi.AssetMediaSizeThumbnail:
 		// GET /assets/{id}/thumbnail?size=fullsize|preview|thumbnail. Note
@@ -499,17 +561,21 @@ func fetchAssetStream(ctx context.Context, c *client.Client, a immichapi.AssetRe
 		requestedSize := size
 		resp, err := c.API.ViewAsset(ctx, a.Id, &immichapi.ViewAssetParams{Size: &requestedSize})
 		if err != nil {
-			return nil, "", fmt.Errorf("downloading %s: %w", size, err)
+			return nil, "", -1, fmt.Errorf("downloading %s: %w", size, err)
 		}
 		if resp.StatusCode != http.StatusOK {
 			defer resp.Body.Close()
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-			return nil, "", fmt.Errorf("server returned %s (expected 200): %s", resp.Status, strings.TrimSpace(string(body)))
+			return nil, "", -1, fmt.Errorf("server returned %s (expected 200): %s", resp.Status, strings.TrimSpace(string(body)))
 		}
-		return resp.Body, ExtensionForContentType(resp.Header.Get("Content-Type")), nil
+		length := resp.ContentLength
+		if length <= 0 {
+			length = -1
+		}
+		return resp.Body, ExtensionForContentType(resp.Header.Get("Content-Type")), length, nil
 
 	default:
-		return nil, "", fmt.Errorf("unsupported download-album size %q (must be %q, %q, %q, or %q)", size, immichapi.AssetMediaSizeOriginal, immichapi.AssetMediaSizeFullsize, immichapi.AssetMediaSizePreview, immichapi.AssetMediaSizeThumbnail)
+		return nil, "", -1, fmt.Errorf("unsupported download-album size %q (must be %q, %q, %q, or %q)", size, immichapi.AssetMediaSizeOriginal, immichapi.AssetMediaSizeFullsize, immichapi.AssetMediaSizePreview, immichapi.AssetMediaSizeThumbnail)
 	}
 }
 
@@ -580,14 +646,22 @@ func effectiveSize(size immichapi.AssetMediaSize, resizeVideo ResizeVideoOptions
 // Otherwise (both disabled, or this asset/size doesn't qualify — e.g. a
 // video downloaded as --size original with only --resize set) the file is
 // saved as-is in its natural format.
-func downloadAssetFile(ctx context.Context, c *client.Client, a immichapi.AssetResponseDto, size immichapi.AssetMediaSize, destBasePath string, resize ResizeOptions, resizeVideo ResizeVideoOptions) (string, error) {
+func downloadAssetFile(ctx context.Context, c *client.Client, a immichapi.AssetResponseDto, size immichapi.AssetMediaSize, destBasePath string, resize ResizeOptions, resizeVideo ResizeVideoOptions, prog *ByteProgress) (string, error) {
 	size = effectiveSize(size, resizeVideo, a.Type)
 
-	body, ext, err := fetchAssetStream(ctx, c, a, size)
+	body, ext, length, err := fetchAssetStream(ctx, c, a, size)
 	if err != nil {
 		return "", err
 	}
 	defer body.Close()
+
+	var src io.Reader = body
+	if prog != nil {
+		prog.Label = a.OriginalFileName
+		prog.Total = length
+		src = prog.Wrap(body)
+		defer prog.Finish()
+	}
 
 	resizeImage := shouldResize(resize, size, a.Type)
 	transcodeVideo := shouldResizeVideo(resizeVideo, size, a.Type)
@@ -599,7 +673,7 @@ func downloadAssetFile(ctx context.Context, c *client.Client, a immichapi.AssetR
 		// final output path.
 		rawPath = destBasePath + ".download-tmp" + ext
 	}
-	if err := writeAssetFile(rawPath, body); err != nil {
+	if err := writeAssetFile(rawPath, src); err != nil {
 		return "", err
 	}
 
@@ -693,12 +767,17 @@ func DownloadAlbum(ctx context.Context, c *client.Client, album immichapi.AlbumR
 
 	names := AssignLocalNames(assets, opts.TimestampPrefix)
 	progress := NewProgress(len(assets))
+	order := make(map[string]int, len(assets))
+	for i, a := range assets {
+		order[a.Id.String()] = i
+	}
 	return RunBatch(assets,
 		func(a immichapi.AssetResponseDto) string { return a.OriginalFileName },
 		func(a immichapi.AssetResponseDto) error {
 			progress.Step(a.OriginalFileName)
 			base := filepath.Join(targetDir, names[a.Id.String()])
-			dest, err := downloadAssetFile(ctx, c, a, opts.Size, base, opts.Resize, opts.ResizeVideo)
+			prog := NewByteProgress(a.OriginalFileName, -1, order[a.Id.String()]+1, len(assets), opts.Quiet)
+			dest, err := downloadAssetFile(ctx, c, a, opts.Size, base, opts.Resize, opts.ResizeVideo, prog)
 			if err != nil {
 				return err
 			}
@@ -773,34 +852,26 @@ func ComputeSyncPlan(assets []immichapi.AssetResponseDto, manifest Manifest) Syn
 // make removal detection unsafe or nonsensical; the caller should point
 // --target-dir at a fresh folder instead.
 func PlanAlbumSync(ctx context.Context, c *client.Client, album immichapi.AlbumResponseDto, targetDir string, opts DownloadAlbumOptions) ([]immichapi.AssetResponseDto, SyncPlan, Manifest, error) {
-	manifest, existed, err := LoadManifest(targetDir)
-	if err != nil {
-		return nil, SyncPlan{}, Manifest{}, err
-	}
-	if existed {
-		if manifest.AlbumID != "" && manifest.AlbumID != album.Id.String() {
-			return nil, SyncPlan{}, Manifest{}, fmt.Errorf("manifest in %q tracks album %q (%s), not %q (%s) — use a different --target-dir or matching --album-id/--album-name", targetDir, manifest.AlbumName, manifest.AlbumID, album.AlbumName, album.Id.String())
-		}
-		if manifest.Size != "" && manifest.Size != opts.Size {
-			return nil, SyncPlan{}, Manifest{}, fmt.Errorf("manifest in %q was created with --size %s, not %s — use a different --target-dir to switch", targetDir, manifest.Size, opts.Size)
-		}
-		if manifest.Resize != opts.Resize.Enabled {
-			return nil, SyncPlan{}, Manifest{}, fmt.Errorf("manifest in %q was created with --resize=%t, not %t — use a different --target-dir to switch", targetDir, manifest.Resize, opts.Resize.Enabled)
-		}
-		if manifest.ResizeVideoPreset != resizeVideoPresetOf(opts.ResizeVideo) {
-			return nil, SyncPlan{}, Manifest{}, fmt.Errorf("manifest in %q was created with --resize-video-preset=%q, not %q — use a different --target-dir to switch", targetDir, manifest.ResizeVideoPreset, resizeVideoPresetOf(opts.ResizeVideo))
-		}
-		if manifest.TimestampPrefix != opts.TimestampPrefix {
-			return nil, SyncPlan{}, Manifest{}, fmt.Errorf("manifest in %q was created with --timestamp-prefix=%t, not %t — use a different --target-dir to switch", targetDir, manifest.TimestampPrefix, opts.TimestampPrefix)
-		}
-	}
+	return PlanSync(ctx, c, SyncSource{Kind: SourceKindAlbum, ID: album.Id.String(), Name: album.AlbumName}, targetDir, opts, func(ctx context.Context) ([]immichapi.AssetResponseDto, error) {
+		return FetchFilteredAlbumAssets(ctx, c, album.Id, opts.IgnoreVideos)
+	})
+}
 
-	assets, err := FetchFilteredAlbumAssets(ctx, c, album.Id, opts.IgnoreVideos)
-	if err != nil {
-		return nil, SyncPlan{}, Manifest{}, fmt.Errorf("fetching album assets: %w", err)
+// checkManifestOptions guards against mixing conventions in one folder.
+func checkManifestOptions(targetDir string, manifest Manifest, opts DownloadAlbumOptions) error {
+	if manifest.Size != "" && manifest.Size != opts.Size {
+		return fmt.Errorf("manifest in %q was created with --size %s, not %s — use a different --target-dir to switch", targetDir, manifest.Size, opts.Size)
 	}
-
-	return assets, ComputeSyncPlan(assets, manifest), manifest, nil
+	if manifest.Resize != opts.Resize.Enabled {
+		return fmt.Errorf("manifest in %q was created with --resize=%t, not %t — use a different --target-dir to switch", targetDir, manifest.Resize, opts.Resize.Enabled)
+	}
+	if manifest.ResizeVideoPreset != resizeVideoPresetOf(opts.ResizeVideo) {
+		return fmt.Errorf("manifest in %q was created with --resize-video-preset=%q, not %q — use a different --target-dir to switch", targetDir, manifest.ResizeVideoPreset, resizeVideoPresetOf(opts.ResizeVideo))
+	}
+	if manifest.TimestampPrefix != opts.TimestampPrefix {
+		return fmt.Errorf("manifest in %q was created with --timestamp-prefix=%t, not %t — use a different --target-dir to switch", targetDir, manifest.TimestampPrefix, opts.TimestampPrefix)
+	}
+	return nil
 }
 
 // ApplyAlbumSync executes plan against targetDir: downloads every asset in
@@ -817,6 +888,23 @@ func PlanAlbumSync(ctx context.Context, c *client.Client, album immichapi.AlbumR
 // successful save is safer than continuing once disk state and the
 // manifest may have diverged.
 func ApplyAlbumSync(ctx context.Context, c *client.Client, album immichapi.AlbumResponseDto, targetDir string, allAssets []immichapi.AssetResponseDto, plan SyncPlan, manifest Manifest, opts DownloadAlbumOptions) error {
+	return ApplySync(ctx, c, SyncSource{Kind: SourceKindAlbum, ID: album.Id.String(), Name: album.AlbumName}, targetDir, allAssets, plan, manifest, opts)
+}
+
+// ApplySync executes plan against targetDir: downloads every asset in
+// plan.Additions and plan.Updates, deletes the local file for every
+// plan.Removals entry, and persists the updated manifest along the way —
+// stamping it with source/opts.Size/etc. so future runs can validate against
+// it. The manifest is saved to disk after every single removal and every
+// successful download (not just once at the end): interrupting a long sync
+// (Ctrl+C, crash, closed terminal) never loses more than the one item that
+// was in flight, and every previously downloaded/removed file is correctly
+// reflected on the next run. Downloads continue on a per-asset error and
+// are summarized at the end (the usual bulk convention), but a local-file
+// deletion error aborts immediately — leaving the manifest as of the last
+// successful save is safer than continuing once disk state and the
+// manifest may have diverged.
+func ApplySync(ctx context.Context, c *client.Client, source SyncSource, targetDir string, allAssets []immichapi.AssetResponseDto, plan SyncPlan, manifest Manifest, opts DownloadAlbumOptions) error {
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return fmt.Errorf("creating target directory %q: %w", targetDir, err)
 	}
@@ -824,8 +912,7 @@ func ApplyAlbumSync(ctx context.Context, c *client.Client, album immichapi.Album
 	if manifest.Assets == nil {
 		manifest.Assets = map[string]ManifestAsset{}
 	}
-	manifest.AlbumID = album.Id.String()
-	manifest.AlbumName = album.AlbumName
+	manifest.stampSource(source.Kind, source.ID, source.Name)
 	manifest.Size = opts.Size
 	manifest.Resize = opts.Resize.Enabled
 	manifest.ResizeVideoPreset = resizeVideoPresetOf(opts.ResizeVideo)
@@ -849,7 +936,7 @@ func ApplyAlbumSync(ctx context.Context, c *client.Client, album immichapi.Album
 		if err := SaveManifest(targetDir, manifest); err != nil {
 			return err
 		}
-		fmt.Printf("Removed %s (asset no longer in album)\n", path)
+		fmt.Printf("Removed %s (asset no longer in %s)\n", path, source.Kind)
 	}
 
 	names := AssignLocalNames(allAssets, opts.TimestampPrefix)
@@ -858,12 +945,17 @@ func ApplyAlbumSync(ctx context.Context, c *client.Client, album immichapi.Album
 	toDownload = append(toDownload, plan.Updates...)
 
 	downloadProgress := NewProgress(len(toDownload))
+	dlOrder := make(map[string]int, len(toDownload))
+	for i, a := range toDownload {
+		dlOrder[a.Id.String()] = i
+	}
 	return RunBatch(toDownload,
 		func(a immichapi.AssetResponseDto) string { return a.OriginalFileName },
 		func(a immichapi.AssetResponseDto) error {
 			downloadProgress.Step(a.OriginalFileName)
 			base := filepath.Join(targetDir, names[a.Id.String()])
-			dest, err := downloadAssetFile(ctx, c, a, opts.Size, base, opts.Resize, opts.ResizeVideo)
+			prog := NewByteProgress(a.OriginalFileName, -1, dlOrder[a.Id.String()]+1, len(toDownload), opts.Quiet)
+			dest, err := downloadAssetFile(ctx, c, a, opts.Size, base, opts.Resize, opts.ResizeVideo, prog)
 			if err != nil {
 				return err
 			}

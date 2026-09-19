@@ -37,6 +37,7 @@ func assetsUploadCommand() *cli.Command {
 			&cli.StringFlag{Name: "slug", Usage: "shared-link slug (query param)"},
 			&cli.StringFlag{Name: "checksum", Usage: "sha1 checksum for duplicate detection before upload (x-immich-checksum header)"},
 			&cli.BoolFlag{Name: "json", Usage: "print results as a JSON array"},
+			&cli.BoolFlag{Name: "quiet", Usage: "disable per-file progress bars on stderr (--json implies quiet)"},
 		},
 		Action: assetsUpload,
 	}
@@ -72,8 +73,17 @@ func assetsUpload(ctx context.Context, cmd *cli.Command) error {
 
 	var results []uploadResult
 	failures := 0
-	for _, f := range files {
+	quiet := cmd.Bool("quiet") || cmd.Bool("json")
+	for i, f := range files {
+		fi, serr := os.Stat(f)
+		var total int64 = -1
+		if serr == nil && !fi.IsDir() {
+			total = fi.Size()
+		}
+		prog := workflows.NewByteProgress(f, total, i+1, len(files), quiet)
+		opts.Progress = prog
 		id, err := workflows.UploadAssetFile(ctx, c, f, opts)
+		prog.Finish()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: file %s: %v\n", f, err)
 			failures++
