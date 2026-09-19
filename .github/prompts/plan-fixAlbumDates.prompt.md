@@ -58,7 +58,7 @@ writing a corrected date via `PUT /assets/{id}` (`updateAsset`).
 
 ### 1. Branch (do first)
 `git checkout dev && git pull origin dev && git checkout -b feature/fix-album-dates` per
-`.github/copilot-instructions.md`'s branching workflow (branch from `dev`, never `main`).
+`AGENTS.md`'s branching workflow (branch from `dev`, never `main`).
 
 ### ADDED BY USER
 
@@ -153,7 +153,7 @@ directly → also ship it standalone). Add `assets update`:
 
 ### 7. Documentation
 *depends on 5, 6*
-- `.github/copilot-instructions.md`: amend the "Never use deprecated endpoints" bullet (line 15) to
+- `AGENTS.md`: amend the "Never use deprecated endpoints" bullet (line 15) to
   note the one approved, narrow exception (`updateAsset`, via `assets update` and `client-workflow
   fix-album-dates`), with a one-line rationale, so it isn't mistaken for an oversight later.
 - `README.md`:
@@ -190,7 +190,7 @@ directly → also ship it standalone). Add `assets update`:
   `UpdateAssetWithResponse`/`UpdateAssetDto`, `AssetResponseDto.LocalDateTime`.
   `internal/immichapi/generate.go` has the only other `//go:generate` besides `tools/apitable/main.go` —
   neither needs changes.
-- `.github/copilot-instructions.md` — amend deprecated-endpoints bullet (line 15).
+- `AGENTS.md` — amend deprecated-endpoints bullet (line 15).
 - `README.md` — Client Workflows table + new subsection + API coverage table (auto).
 
 ## Verification

@@ -249,7 +249,7 @@ Flags: `--dry-run`, `--offset-days N` (default `2`; allow assets up to N days be
 
 > ⚠️ Without `--interactive`, confirming prints an explicit warning that it will change every listed asset automatically, with no per-album review (e.g. "This changes 1293 asset(s) automatically, without reviewing each one individually").
 
-> ⚠️ **This is the one deliberate exception to this project's rule against deprecated endpoints.** Fixing a date calls `PUT /assets/{id}` (`updateAsset`), the only Immich API that can set an asset's capture date — it is marked deprecated upstream with a self-referential (i.e. non-existent) `replacementId`, so no working replacement exists. See `.github/copilot-instructions.md` for the exact scope of this exception.
+> ⚠️ **This is the one deliberate exception to this project's rule against deprecated endpoints.** Fixing a date calls `PUT /assets/{id}` (`updateAsset`), the only Immich API that can set an asset's capture date — it is marked deprecated upstream with a self-referential (i.e. non-existent) `replacementId`, so no working replacement exists. See `AGENTS.md` for the exact scope of this exception.
 
 ### `client-workflow download-album`
 

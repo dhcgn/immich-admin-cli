@@ -116,8 +116,7 @@ func printAsset(a *immichapi.AssetResponseDto) {
 // updateAsset is marked deprecated upstream with a self-referential (i.e.
 // non-existent) replacementId — no stable alternative exists for setting an
 // asset's capture date, so this is the project's one deliberate, documented
-// exception to "never use deprecated endpoints" (see
-// .github/copilot-instructions.md).
+// exception to "never use deprecated endpoints" (see AGENTS.md).
 func assetsUpdateCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "update",

@@ -252,7 +252,7 @@ func ComputeFixedDateTime(asset immichapi.AssetResponseDto, p AlbumDatePattern) 
 // endpoints": PUT /assets/{id} (updateAsset) is the only Immich API endpoint
 // that can set an asset's capture date, and it is marked deprecated upstream
 // with a self-referential (non-existent) replacementId — no stable
-// alternative exists (see .github/copilot-instructions.md).
+// alternative exists (see AGENTS.md).
 func FixAlbumDates(ctx context.Context, c *client.Client, checks []AlbumDateCheck, opts FixAlbumDatesOptions) error {
 	return RunBatch(checks,
 		func(check AlbumDateCheck) string { return check.Album.AlbumName },
