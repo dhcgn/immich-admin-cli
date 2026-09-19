@@ -10,7 +10,8 @@ on:
 
 permissions:
   contents: read
-  issues: write # post/update the sticky preview-binaries PR comment
+  issues: write # update the sticky preview-binaries PR comment
+  pull-requests: write # post the sticky preview-binaries PR comment
 
 jobs:
   build:
