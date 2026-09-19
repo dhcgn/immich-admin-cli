@@ -218,6 +218,8 @@ git checkout -b feature/<name>
 
 ### 2. Feature → main + tag (stable release)
 
+> gh (GitHub CLI) access requires a valid token. Ensure `GH_TOKEN` is set in your environment.
+
 ```sh
 git push -u origin feature/<name>
 gh pr create --base main --title "<title>"
