@@ -3,7 +3,6 @@
 [![Build](https://img.shields.io/github/actions/workflow/status/dhcgn/immich-admin-cli/ci.yml?branch=main)](https://github.com/dhcgn/immich-admin-cli/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/dhcgn/immich-admin-cli)](https://github.com/dhcgn/immich-admin-cli/releases/latest)
 [![Go version](https://img.shields.io/github/go-mod/go-version/dhcgn/immich-admin-cli)](go.mod)
-[![Go Report Card](https://goreportcard.com/badge/github.com/dhcgn/immich-admin-cli)](https://goreportcard.com/report/github.com/dhcgn/immich-admin-cli)
 [![Downloads](https://img.shields.io/github/downloads/dhcgn/immich-admin-cli/total)](https://github.com/dhcgn/immich-admin-cli/releases)
 [![License](https://img.shields.io/github/license/dhcgn/immich-admin-cli)](LICENSE)
 
