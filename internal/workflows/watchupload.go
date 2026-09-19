@@ -203,6 +203,29 @@ func stableForGate(st map[string]watchUploadEntry, rel string, size int64, mtime
 	return now.Unix()-e.FirstSeen >= int64(stableFor.Seconds())
 }
 
+// bulkIDFailure renders a per-ID album-add failure, or "" when the outcome
+// is benign: success, duplicate (already in the album — the normal case on
+// re-runs after the state file was deleted), or not-found. Same buckets as
+// the `albums add-assets` tally and merge-album. Pure for testing.
+func bulkIDFailure(r immichapi.BulkIdResponseDto) string {
+	if r.Success {
+		return ""
+	}
+	if r.Error != nil {
+		switch *r.Error {
+		case immichapi.BulkIdErrorReasonDuplicate, immichapi.BulkIdErrorReasonNotFound:
+			return ""
+		}
+	}
+	if r.ErrorMessage != nil && *r.ErrorMessage != "" {
+		return *r.ErrorMessage
+	}
+	if r.Error != nil && string(*r.Error) != "" {
+		return string(*r.Error)
+	}
+	return "server reported failure"
+}
+
 // ResolveOrCreateAlbumByName finds an album by exact name or creates it.
 // dryRun prints instead of creating; yes skips the creation prompt.
 func ResolveOrCreateAlbumByName(ctx context.Context, c *client.Client, name string, dryRun, yes bool) (immichapi.AlbumResponseDto, error) {
@@ -463,8 +486,8 @@ func RunWatchUploadOnce(ctx context.Context, c *client.Client, opts WatchUploadO
 				stats.Failed += end - i
 			} else if resp.JSON200 != nil {
 				for _, r := range *resp.JSON200 {
-					if !r.Success {
-						fmt.Fprintf(os.Stderr, "Error: asset %s: %v\n", r.Id, r.Error)
+					if msg := bulkIDFailure(r); msg != "" {
+						fmt.Fprintf(os.Stderr, "Error: asset %s: %s\n", r.Id, msg)
 						stats.Failed++
 					}
 				}

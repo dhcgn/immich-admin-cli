@@ -59,6 +59,25 @@ func TestFormatByteProgressLine(t *testing.T) {
 	}
 }
 
+func TestBulkIDFailure(t *testing.T) {
+	id := openapi_types.UUID([16]byte{2})
+	if got := bulkIDFailure(immichapi.BulkIdResponseDto{Id: id, Success: true}); got != "" {
+		t.Fatalf("success = %q, want empty", got)
+	}
+	dup := immichapi.BulkIdErrorReasonDuplicate
+	if got := bulkIDFailure(immichapi.BulkIdResponseDto{Id: id, Error: &dup}); got != "" {
+		t.Fatalf("duplicate = %q, want empty (already in album)", got)
+	}
+	perm := immichapi.BulkIdErrorReasonNoPermission
+	msg := "denied"
+	if got := bulkIDFailure(immichapi.BulkIdResponseDto{Id: id, Error: &perm, ErrorMessage: &msg}); got != "denied" {
+		t.Fatalf("no_permission = %q, want %q", got, msg)
+	}
+	if got := bulkIDFailure(immichapi.BulkIdResponseDto{Id: id, Error: &perm}); got != "no_permission" {
+		t.Fatalf("no_permission bare = %q, want the reason value, not a pointer", got)
+	}
+}
+
 func TestStableForGate(t *testing.T) {
 	st := map[string]watchUploadEntry{}
 	now := time.Now()
