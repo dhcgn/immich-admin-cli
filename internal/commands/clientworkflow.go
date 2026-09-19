@@ -43,6 +43,7 @@ func ClientWorkflow() *cli.Command {
 			fixAlbumDatesCommand(),
 			downloadAlbumCommand(),
 			mergeAlbumCommand(),
+			findSimilarCommand(),
 			watchUploadCommand(),
 			watchDownloadCommand(),
 		},

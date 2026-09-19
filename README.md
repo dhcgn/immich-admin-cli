@@ -44,6 +44,7 @@ All workflows follow the same safety model: `--dry-run` shows what would happen 
 | ✅ done | `client-workflow repair-assets` | Repair corrupt JPEG (missing EOI marker) and TIFF (invalid zero-count IFD tag) assets and re-import them, keeping metadata |
 | ✅ done | `client-workflow fix-album-dates` | Check assets in date-named albums ("2025-07-04 Garten", "2010 USA") against the date implied by the album name, and offer to fix mismatches |
 | ✅ done | `client-workflow download-album` | Download all originals or all thumbnails from one album to a local folder, optionally excluding videos, optionally kept in sync |
+| ✅ done | `client-workflow find-similar` | Find assets in Immich that look like a local image file (via external clip-probe service) |
 | ⏳ planned | `client-workflow reencode-jxl` | Re-encode assets to JPEG XL (`cjxl`), then replace the originals |
 | ⏳ planned | `client-workflow reencode-jpegli` | Re-encode assets with jpegli (`cjpegli`), then replace the originals |
 
@@ -318,6 +319,24 @@ immich-admin cw download-album --album-name "2025-07-04 Garten" --target-dir ./g
 Flags: exactly one of `--album-id UUID` / `--album-name NAME`, `--target-dir DIR` (required), `--size original|fullsize|preview|thumbnail` (default `preview`), `--ignore-videos`, `--timestamp-prefix`, `--resize`, `--resize-width PIXELS`, `--resize-height PIXELS`, `--resize-quality 1-100` (default `85`; the latter three require `--resize`), `--resize-video-preset PRESET` (currently only `1080p-web-friendly`), `--sync`, `--dry-run`, `--yes` (skip the confirmation prompt before `--sync` deletes local files).
 
 The underlying operations are also available standalone: `assets download-original` and `assets download-thumbnail` (`GET /assets/{id}/thumbnail`, supporting `fullsize|preview|thumbnail`, default `preview`, plus `--edited`; `original` is not accepted here — the OpenAPI spec deprecates `size=original` on this endpoint in favor of `assets download-original`).
+
+### `client-workflow find-similar`
+
+Finds assets already in your Immich library that look like a local image file — before you upload it. Uses the external [immich-clip-probe](https://github.com/dhcgn/immich-clip-probe/) service (runs next to Immich, read-only, token-authenticated). This is the first command that depends on a third-party service: configure `clip_probe.server` + `clip_probe.token` in the config file (or `IMMICH_CLIP_PROBE_SERVER` / `IMMICH_CLIP_PROBE_TOKEN` env vars).
+
+```sh
+# Nearest matches, duplicate verdict based on --max-distance (default 0.01, same as Immich's own duplicate default)
+immich-admin cw find-similar DSC_2031.jpg
+
+# Calibrate a threshold: nearest 5 regardless of distance
+immich-admin cw find-similar DSC_2031.jpg --all --limit 5
+
+# Pipeable IDs + full raw response
+immich-admin cw find-similar DSC_2031.jpg --ids-only
+immich-admin cw find-similar DSC_2031.jpg --json
+```
+
+Flags: `--limit 1-100` (default `10`), `--max-distance 0-2` (default `0.01`), `--all` (ignore the cut-off), `--type IMAGE|VIDEO|all` (default `IMAGE`), `--json`, `--ids-only` / `-q`. An empty match list is a normal result (nothing close enough), not an error.
 
 ## Sample Use Cases
 
