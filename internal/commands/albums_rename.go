@@ -56,7 +56,8 @@ func albumsRename(ctx context.Context, cmd *cli.Command) error {
 			return err
 		}
 	} else {
-		album, err = workflows.ResolveAlbum(ctx, c, nil, cmd.String("album-name"))
+		// No --yes flag here: a whitespace-variant match always asks.
+		album, err = resolveAlbumByName(ctx, c, os.Stdin, os.Stdout, cmd.String("album-name"), false)
 		if err != nil {
 			return err
 		}

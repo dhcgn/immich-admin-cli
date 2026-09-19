@@ -1292,6 +1292,16 @@ func validateDownloadAlbumAlbumFlags(albumIDStr, albumName string) error {
 	return nil
 }
 
+// resolveDownloadAlbum resolves the download-album target: by ID directly,
+// or by name via the shared whitespace-tolerant lookup (a single
+// whitespace-variant match is offered, auto-accepted behind --yes).
+func resolveDownloadAlbum(ctx context.Context, c *client.Client, albumID *openapi_types.UUID, albumName string, autoYes bool) (immichapi.AlbumResponseDto, error) {
+	if albumID != nil {
+		return workflows.ResolveAlbum(ctx, c, albumID, "")
+	}
+	return resolveAlbumByName(ctx, c, os.Stdin, os.Stdout, albumName, autoYes)
+}
+
 // resolveDownloadAlbumSize validates the --size flag value against the full
 // AssetMediaSize enum (fullsize, original, preview, thumbnail).
 // "original" is accepted here even though the OpenAPI spec deprecates
@@ -1517,7 +1527,7 @@ func clientWorkflowDownloadAlbum(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	album, err := workflows.ResolveAlbum(ctx, c, albumID, albumName)
+	album, err := resolveDownloadAlbum(ctx, c, albumID, albumName, yes)
 	if err != nil {
 		return err
 	}

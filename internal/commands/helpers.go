@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 
@@ -14,6 +15,8 @@ import (
 
 	"github.com/dhcgn/immich-admin-cli/internal/client"
 	"github.com/dhcgn/immich-admin-cli/internal/config"
+	"github.com/dhcgn/immich-admin-cli/internal/immichapi"
+	"github.com/dhcgn/immich-admin-cli/internal/workflows"
 )
 
 // newClient loads the config named by the root --config flag and returns an
@@ -35,6 +38,89 @@ func newClient(ctx context.Context, cmd *cli.Command) (*client.Client, error) {
 		fmt.Fprintf(os.Stderr, "⚠ %v\n", err)
 	}
 	return c, nil
+}
+
+// resolveAlbumByName resolves exactly one album by exact name. Phone
+// keyboards often leave trailing spaces in album names, so when the exact
+// lookup fails it retries whitespace-tolerantly: if exactly one album's
+// name trims to the query, offerWhitespaceAlbum asks whether to use it
+// (auto-accepted when autoYes, e.g. behind --yes). Any other outcome
+// returns the original lookup error, so scripts with exact names and
+// closed stdin behave exactly as before.
+func resolveAlbumByName(ctx context.Context, c *client.Client, stdin io.Reader, stdout io.Writer, query string, autoYes bool) (immichapi.AlbumResponseDto, error) {
+	album, err := workflows.ResolveAlbum(ctx, c, nil, query)
+	if err == nil {
+		return album, nil
+	}
+	candidates, ferr := searchAlbumsByTrimmedName(ctx, c, query)
+	if ferr != nil || len(candidates) != 1 {
+		return immichapi.AlbumResponseDto{}, err
+	}
+	return offerWhitespaceAlbum(stdin, stdout, query, candidates[0], autoYes, err)
+}
+
+// searchAlbumsByTrimmedName lists all albums (GET /albums) and returns those
+// whose name trims to the query (both sides trimmed with TrimSpace).
+func searchAlbumsByTrimmedName(ctx context.Context, c *client.Client, query string) ([]immichapi.AlbumResponseDto, error) {
+	resp, err := c.API.GetAllAlbumsWithResponse(ctx, &immichapi.GetAllAlbumsParams{})
+	if err == nil {
+		err = client.Check(resp, http.StatusOK)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("listing albums: %w", err)
+	}
+	var out []immichapi.AlbumResponseDto
+	if resp.JSON200 != nil {
+		out = matchTrimmedAlbumName(*resp.JSON200, query)
+	}
+	return out, nil
+}
+
+// matchTrimmedAlbumName returns the albums whose name trims to the query
+// (both sides trimmed). Pure (no I/O) so the matching is directly
+// unit-testable.
+func matchTrimmedAlbumName(albums []immichapi.AlbumResponseDto, query string) []immichapi.AlbumResponseDto {
+	want := strings.TrimSpace(query)
+	var out []immichapi.AlbumResponseDto
+	for _, a := range albums {
+		if strings.TrimSpace(a.AlbumName) == want {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// offerWhitespaceAlbum asks whether to use the single whitespace-variant
+// candidate found for query (auto-accepted when autoYes); declining — or a
+// closed stdin — returns origErr, the exact-lookup failure. Pure except for
+// the prompt I/O, which tests drive with buffers.
+func offerWhitespaceAlbum(stdin io.Reader, stdout io.Writer, query string, candidate immichapi.AlbumResponseDto, autoYes bool, origErr error) (immichapi.AlbumResponseDto, error) {
+	if autoYes {
+		fmt.Fprintf(stdout, "No album named %q found; using %q (--yes).\n", query, candidate.AlbumName)
+		return candidate, nil
+	}
+	fmt.Fprintf(stdout, "No album named %q found, but found %q (%s). Use it? [y/N]: ",
+		query, candidate.AlbumName, whitespaceNote(candidate.AlbumName))
+	if !confirm(stdin) {
+		return immichapi.AlbumResponseDto{}, origErr
+	}
+	return candidate, nil
+}
+
+// whitespaceNote describes which end of name carries whitespace, for the
+// offer prompt (e.g. "trailing whitespace").
+func whitespaceNote(name string) string {
+	var bits []string
+	if strings.TrimLeft(name, " \t\r\n\v\f") != name {
+		bits = append(bits, "leading whitespace")
+	}
+	if strings.TrimRight(name, " \t\r\n\v\f") != name {
+		bits = append(bits, "trailing whitespace")
+	}
+	if len(bits) == 0 {
+		return "whitespace"
+	}
+	return strings.Join(bits, " and ")
 }
 
 // idsFileFlag is the shared flag for bulk commands that read asset IDs from a
