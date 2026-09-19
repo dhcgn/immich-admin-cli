@@ -15,6 +15,8 @@
 I want to be able to manage my Immich server from the command line for my large photo collection.
 There are some bulk features that are not available in the web interface, and I want to be able to automate some tasks. Like compression, converting, repairing, and deleting photos.
 
+Another motivation is managing an overwhelming number of images with AI-agent support: the generated agent skill (`immich-admin-cli/SKILL.md`) describes every command for AI consumption, and the CLI surface itself is optimized for AI agents (e.g. Hermes Agent) — machine-readable `--json` output, pipeable `--ids-only` IDs, `--dry-run` previews, and non-interactive `--yes` flags. Agents can always retrieve the up-to-date skill straight from the binary via `immich-admin return-agent-skill`, so they never have to work from stale documentation about how the CLI works.
+
 ## Self-Update
 
 `immich-admin update` checks the latest [GitHub release](https://github.com/dhcgn/immich-admin-cli/releases) for a build matching the current OS/arch and, on confirmation, replaces the running executable in place and restarts it (via [`gh-update`](https://github.com/dhcgn/gh-update)).
