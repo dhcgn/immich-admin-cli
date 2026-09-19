@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  issues: write # post/update the sticky preview-binaries PR comment
 
 jobs:
   build:
@@ -41,9 +42,31 @@ jobs:
           (cd dist && sha256sum * > checksums.txt)
 
       - name: Upload preview binaries
+        id: upload
         uses: actions/upload-artifact@v4
         with:
           name: immich-admin-pr-${{ github.event.pull_request.number }}
           path: dist/*
           retention-days: 14
           if-no-files-found: error
+
+      - name: Comment download links on PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          MARKER="<!-- preview-binaries -->"
+          BODY="$MARKER
+          ## Preview binaries (commit \`${GITHUB_SHA::7}\`)
+
+          Download test executables for this PR (linux/darwin/windows + \`checksums.txt\`) from the run's **Artifacts** section (GitHub login required):
+          https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts
+
+          Or with the CLI: \`gh run download ${{ github.run_id }} -n immich-admin-pr-${{ github.event.pull_request.number }} -R ${{ github.repository }}\`"
+          PR="${{ github.event.pull_request.number }}"
+          EXISTING=$(gh api "repos/${{ github.repository }}/issues/$PR/comments" \
+            --jq "[.[] | select(.body | contains(\"$MARKER\"))][0].id // empty")
+          if [ -n "$EXISTING" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$EXISTING" -f body="$BODY" >/dev/null
+          else
+            gh pr comment "$PR" --body "$BODY" -R "${{ github.repository }}"
+          fi
