@@ -118,6 +118,6 @@ albums separate, or rename instead of merging blindly. Always run
   `--sidecar`/`--filename` are single-file only; per-file byte bar on stderr, `--quiet` disables, `--json` implies quiet).
   `assets check-remote-exists FILE|DIR...` (alias `check-bulk-upload`) hashes locally and reports
   `uploaded <id>` / `missing` / `unsupported` without mutating (`--json`, `--ids-only -q` pipes duplicate IDs into `albums add-assets`/`tags tag`).
-- **Watch**: `client-workflow watch-upload --watch-dir DIR --mode flat|by-subfolder [--tag-pattern "immich-admin-cli/watch/{yyyy-MM-dd}"] [--album-id|--album-name] --interval 60s --stable-for 30s [--once] [--dry-run] [--yes]`
-  polls and uploads only stable files (bulk-check first; duplicates only linked). `client-workflow watch-download (--album-id|--album-name|--tag-id|--tag-value) --target-dir DIR --size original --interval 300s [--once]`
+- **Watch**: `client-workflow watch-upload --watch-dir DIR --mode flat|by-subfolder [--tag-pattern "immich-admin-cli/watch/{yyyy-MM-dd}"] [--album-id|--album-name] --interval 60s --stable-for 10s [--once] [--dry-run] [--yes]`
+  polls and uploads only stable files (bulk-check first; duplicates only linked; `--once` forces `--stable-for 0s`, i.e. uploads immediately). `client-workflow watch-download (--album-id|--album-name|--tag-id|--tag-value) --target-dir DIR --size original --interval 300s [--once]`
   loops the `.immich-sync.json` manifest sync (album or tag source). `--interval <=0` means run once. Per-interval one-line summary on stderr; `--json` prints JSON stats on stdout.

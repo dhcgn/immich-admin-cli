@@ -388,8 +388,8 @@ Watch a folder and auto-upload new stable files (POST /assets/bulk-upload-check 
 - `--album-id` (string): opt-in album `ID` to also add uploads to
 - `--album-name` (string): opt-in album name to also add uploads to (created unless --dry-run)
 - `--interval` (string): poll interval (e.g. 60s); <=0 means run once [default: "60s"]
-- `--stable-for` (string): defer files changed within this long (e.g. 30s) [default: "30s"]
-- `--once` (bool): run a single scan and exit (for cron)
+- `--stable-for` (string): defer files changed within this long (default 10s; forced to 0s with --once) [default: "10s"]
+- `--once` (bool): run a single scan and exit (for cron); uploads immediately (--stable-for is forced to 0s)
 - `--dry-run` (bool): print what would be uploaded/linked without changing anything
 - `--yes` (bool): skip creation prompts for tags/albums
 - `--quiet` (bool): disable per-file progress bars on stderr (--json implies quiet)
@@ -569,6 +569,6 @@ albums separate, or rename instead of merging blindly. Always run
   `--sidecar`/`--filename` are single-file only; per-file byte bar on stderr, `--quiet` disables, `--json` implies quiet).
   `assets check-remote-exists FILE|DIR...` (alias `check-bulk-upload`) hashes locally and reports
   `uploaded <id>` / `missing` / `unsupported` without mutating (`--json`, `--ids-only -q` pipes duplicate IDs into `albums add-assets`/`tags tag`).
-- **Watch**: `client-workflow watch-upload --watch-dir DIR --mode flat|by-subfolder [--tag-pattern "immich-admin-cli/watch/{yyyy-MM-dd}"] [--album-id|--album-name] --interval 60s --stable-for 30s [--once] [--dry-run] [--yes]`
-  polls and uploads only stable files (bulk-check first; duplicates only linked). `client-workflow watch-download (--album-id|--album-name|--tag-id|--tag-value) --target-dir DIR --size original --interval 300s [--once]`
+- **Watch**: `client-workflow watch-upload --watch-dir DIR --mode flat|by-subfolder [--tag-pattern "immich-admin-cli/watch/{yyyy-MM-dd}"] [--album-id|--album-name] --interval 60s --stable-for 10s [--once] [--dry-run] [--yes]`
+  polls and uploads only stable files (bulk-check first; duplicates only linked; `--once` forces `--stable-for 0s`, i.e. uploads immediately). `client-workflow watch-download (--album-id|--album-name|--tag-id|--tag-value) --target-dir DIR --size original --interval 300s [--once]`
   loops the `.immich-sync.json` manifest sync (album or tag source). `--interval <=0` means run once. Per-interval one-line summary on stderr; `--json` prints JSON stats on stdout.

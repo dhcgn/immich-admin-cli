@@ -17,3 +17,19 @@ func TestParseIntervalOrOnce(t *testing.T) {
 		t.Error("bogus interval expected error")
 	}
 }
+
+func TestEffectiveStableFor(t *testing.T) {
+	if d, err := effectiveStableFor("10s", false); err != nil || d != 10*time.Second {
+		t.Fatalf("10s,false = %v,%v; want 10s,nil", d, err)
+	}
+	// --once forces immediate upload regardless of the flag value.
+	if d, err := effectiveStableFor("10s", true); err != nil || d != 0 {
+		t.Fatalf("10s,true = %v,%v; want 0,nil", d, err)
+	}
+	if _, err := effectiveStableFor("bogus", false); err == nil {
+		t.Error("bogus stable-for expected error")
+	}
+	if _, err := effectiveStableFor("-1s", false); err == nil {
+		t.Error("negative stable-for expected error")
+	}
+}

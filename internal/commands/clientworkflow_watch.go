@@ -39,10 +39,11 @@ func watchUploadCommand() *cli.Command {
 		Name:  "watch-upload",
 		Usage: "Watch a folder and auto-upload new stable files (POST /assets/bulk-upload-check + POST /assets)",
 		Description: "Polls --watch-dir every --interval (default 60s) and uploads new files. " +
-			"Files whose size/mtime changed within --stable-for (default 30s) are deferred to the next interval. " +
+			"Files whose size/mtime changed within --stable-for (default 10s) are deferred to the next interval. " +
 			"Duplicates (bulk-upload-check reject/duplicate with assetId) are only linked to the tag/album, never re-uploaded. " +
 			"--mode flat tags everything with --tag-pattern (default immich-admin-cli/watch/{yyyy-MM-dd}); " +
-			"--mode by-subfolder uses the raw subfolder name. --album-id/--album-name is opt-in. --once runs a single scan (for cron).",
+			"--mode by-subfolder uses the raw subfolder name. --album-id/--album-name is opt-in. --once runs a single scan (for cron) " +
+			"and uploads immediately (--stable-for is forced to 0s).",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "watch-dir", Usage: "local directory to watch", Required: true},
 			&cli.StringFlag{Name: "mode", Usage: "flat or by-subfolder", Value: "flat"},
@@ -51,8 +52,8 @@ func watchUploadCommand() *cli.Command {
 			&cli.StringFlag{Name: "album-id", Usage: "opt-in album `ID` to also add uploads to"},
 			&cli.StringFlag{Name: "album-name", Usage: "opt-in album name to also add uploads to (created unless --dry-run)"},
 			&cli.StringFlag{Name: "interval", Usage: "poll interval (e.g. 60s); <=0 means run once", Value: "60s"},
-			&cli.StringFlag{Name: "stable-for", Usage: "defer files changed within this long (e.g. 30s)", Value: "30s"},
-			&cli.BoolFlag{Name: "once", Usage: "run a single scan and exit (for cron)"},
+			&cli.StringFlag{Name: "stable-for", Usage: "defer files changed within this long (default 10s; forced to 0s with --once)", Value: "10s"},
+			&cli.BoolFlag{Name: "once", Usage: "run a single scan and exit (for cron); uploads immediately (--stable-for is forced to 0s)"},
 			&cli.BoolFlag{Name: "dry-run", Usage: "print what would be uploaded/linked without changing anything"},
 			&cli.BoolFlag{Name: "yes", Usage: "skip creation prompts for tags/albums"},
 			&cli.BoolFlag{Name: "quiet", Usage: "disable per-file progress bars on stderr (--json implies quiet)"},
@@ -101,6 +102,23 @@ func parseIntervalOrOnce(raw string, once bool) (time.Duration, bool, error) {
 	return d, once, nil
 }
 
+// effectiveStableFor parses --stable-for, forcing 0 when --once is set:
+// a one-shot run uploads immediately without waiting for stability.
+// Pure for testing.
+func effectiveStableFor(raw string, once bool) (time.Duration, error) {
+	if once {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid --stable-for %q: %w", raw, err)
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("invalid --stable-for %q: must not be negative", raw)
+	}
+	return d, nil
+}
+
 func clientWorkflowWatchUpload(ctx context.Context, cmd *cli.Command) error {
 	if cmd.Args().Len() > 0 {
 		return fmt.Errorf("watch-upload takes no positional arguments (got %v)", cmd.Args().Slice())
@@ -109,14 +127,11 @@ func clientWorkflowWatchUpload(ctx context.Context, cmd *cli.Command) error {
 	if mode != "flat" && mode != "by-subfolder" {
 		return fmt.Errorf("invalid --mode %q: must be flat or by-subfolder", mode)
 	}
-	stableFor, err := time.ParseDuration(cmd.String("stable-for"))
-	if err != nil {
-		return fmt.Errorf("invalid --stable-for %q: %w", cmd.String("stable-for"), err)
-	}
-	if stableFor < 0 {
-		return fmt.Errorf("invalid --stable-for %q: must not be negative", cmd.String("stable-for"))
-	}
 	interval, once, err := parseIntervalOrOnce(cmd.String("interval"), cmd.Bool("once"))
+	if err != nil {
+		return err
+	}
+	stableFor, err := effectiveStableFor(cmd.String("stable-for"), once)
 	if err != nil {
 		return err
 	}
