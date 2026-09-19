@@ -43,6 +43,8 @@ func ClientWorkflow() *cli.Command {
 			fixAlbumDatesCommand(),
 			downloadAlbumCommand(),
 			mergeAlbumCommand(),
+			watchUploadCommand(),
+			watchDownloadCommand(),
 		},
 	}
 }
@@ -1395,6 +1397,7 @@ func downloadAlbumCommand() *cli.Command {
 				Name:  "yes",
 				Usage: "skip the confirmation prompt before deleting local files (--sync only)",
 			},
+			&cli.BoolFlag{Name: "quiet", Usage: "disable per-file progress bars on stderr"},
 		},
 		Action: clientWorkflowDownloadAlbum,
 	}
@@ -1515,6 +1518,7 @@ func clientWorkflowDownloadAlbum(ctx context.Context, cmd *cli.Command) error {
 		Resize:          resizeOpts,
 		ResizeVideo:     resizeVideoOpts,
 		TimestampPrefix: cmd.Bool("timestamp-prefix"),
+		Quiet:           cmd.Bool("quiet"),
 	}
 
 	// Printed before any network activity (newClient/ResolveAlbum below),

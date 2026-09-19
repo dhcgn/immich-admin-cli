@@ -449,7 +449,15 @@ func downloadOriginalTo(ctx context.Context, c *client.Client, id openapi_types.
 	}
 	defer f.Close()
 
-	if _, err := io.Copy(f, resp.Body); err != nil {
+	total := resp.ContentLength
+	if total <= 0 {
+		total = -1
+	}
+	// ponytail: quiet=false default; repair has no --quiet flag yet, bar is plain lines when piped.
+	prog := NewByteProgress(id.String(), total, 1, 1, false)
+	src := prog.Wrap(resp.Body)
+	defer prog.Finish()
+	if _, err := io.Copy(f, src); err != nil {
 		return fmt.Errorf("writing temp file %q: %w", destPath, err)
 	}
 	return nil

@@ -38,6 +38,7 @@ func Assets() *cli.Command {
 			assetsDownloadCommand(),
 			assetsDownloadThumbnailCommand(),
 			assetsUploadCommand(),
+			assetsCheckRemoteExistsCommand(),
 			assetsDeleteCommand(),
 			assetsCopyCommand(),
 		},
