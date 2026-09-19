@@ -81,7 +81,14 @@ immich-admin assets info --ids-file ids.txt
   uploads, checksum-verifies, copies metadata (albums, favorite, shared
   links, sidecar, stack), then trashes the original. Aborts on checksum
   duplicates instead of touching the wrong asset.
-- **Albums**: `client-workflow download-album --album-name NAME --target-dir
+- **Albums**: `albums create --name [--description]`; `albums add-assets /
+  remove-assets ALBUM_ID [--ids-file] [--dry-run] [--yes]` (reports
+  added-or-removed / already-present / not-found per ID); `albums delete
+  [--force]` (refuses non-empty albums without `--force`; the server trashes
+  and finishes deletion in a background job, so a deleted album can linger
+  briefly). `client-workflow merge-album --from --into
+  [--delete-empty-source] [--dry-run] [--yes]` moves every asset out of one
+  album into another for duplicate cleanup. `client-workflow download-album --album-name NAME --target-dir
   DIR --size original --sync` mirrors an album (manifest-tracked, safe to
   resume); `--size preview` + `--resize`/`--resize-video-preset` for small
   shareable copies. `fix-album-dates` reconciles date-named albums

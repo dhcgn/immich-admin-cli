@@ -124,6 +124,37 @@ Rename an album (PATCH /albums/{id})
 - `--album-name` (string): target album's current name, exact match (mutually exclusive with --album-id)
 - `--dry-run` (bool): print the planned rename without changing anything
 
+### albums add-assets
+
+Add assets to an album (PUT /albums/{id}/assets)
+Args: `ALBUM_ID [ASSET_ID ...]`
+- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--dry-run` (bool): print the assets that would be added without changing anything
+- `--yes` (bool): skip the confirmation prompt before adding assets
+
+### albums remove-assets
+
+Remove assets from an album (DELETE /albums/{id}/assets)
+Args: `ALBUM_ID [ASSET_ID ...]`
+- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--dry-run` (bool): print the assets that would be removed without changing anything
+- `--yes` (bool): skip the confirmation prompt before removing assets
+
+### albums create
+
+Create an album (POST /albums)
+- `--name` (string): new album `NAME` [required]
+- `--description` (string): album `DESCRIPTION`
+
+### albums delete
+
+Delete one or more albums by ID (DELETE /albums/{id})
+Args: `[ALBUM_ID ...]`
+- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--force` (bool): also delete albums that still contain assets (otherwise non-empty albums are refused)
+- `--dry-run` (bool): print the albums that would be deleted without changing anything
+- `--yes` (bool): skip the confirmation prompt before deleting albums
+
 ## search
 
 Search operations
@@ -316,6 +347,15 @@ Download all original files or a smaller variant (preview/thumbnail/fullsize) fr
 - `--dry-run` (bool): print the planned downloads/deletions without changing anything
 - `--yes` (bool): skip the confirmation prompt before deleting local files (--sync only)
 
+### client-workflow merge-album
+
+Move every asset from one album into another, optionally deleting the emptied source
+- `--from` (string): source album `UUID` (assets move out of it) [required]
+- `--into` (string): target album `UUID` (assets move into it) [required]
+- `--delete-empty-source` (bool): delete the source album when it holds no assets after the move
+- `--dry-run` (bool): print the merge plan without changing anything
+- `--yes` (bool): skip the confirmation prompt before moving assets
+
 ## immich-workflow
 
 Server-side workflow operations
@@ -437,7 +477,14 @@ immich-admin assets info --ids-file ids.txt
   uploads, checksum-verifies, copies metadata (albums, favorite, shared
   links, sidecar, stack), then trashes the original. Aborts on checksum
   duplicates instead of touching the wrong asset.
-- **Albums**: `client-workflow download-album --album-name NAME --target-dir
+- **Albums**: `albums create --name [--description]`; `albums add-assets /
+  remove-assets ALBUM_ID [--ids-file] [--dry-run] [--yes]` (reports
+  added-or-removed / already-present / not-found per ID); `albums delete
+  [--force]` (refuses non-empty albums without `--force`; the server trashes
+  and finishes deletion in a background job, so a deleted album can linger
+  briefly). `client-workflow merge-album --from --into
+  [--delete-empty-source] [--dry-run] [--yes]` moves every asset out of one
+  album into another for duplicate cleanup. `client-workflow download-album --album-name NAME --target-dir
   DIR --size original --sync` mirrors an album (manifest-tracked, safe to
   resume); `--size preview` + `--resize`/`--resize-video-preset` for small
   shareable copies. `fix-album-dates` reconciles date-named albums
