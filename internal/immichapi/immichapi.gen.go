@@ -1782,6 +1782,7 @@ const (
 	SyncEntityTypeAssetFaceDeleteV1          SyncEntityType = "AssetFaceDeleteV1"
 	SyncEntityTypeAssetFaceV1                SyncEntityType = "AssetFaceV1"
 	SyncEntityTypeAssetFaceV2                SyncEntityType = "AssetFaceV2"
+	SyncEntityTypeAssetFaceV3                SyncEntityType = "AssetFaceV3"
 	SyncEntityTypeAssetMetadataDeleteV1      SyncEntityType = "AssetMetadataDeleteV1"
 	SyncEntityTypeAssetMetadataV1            SyncEntityType = "AssetMetadataV1"
 	SyncEntityTypeAssetOcrDeleteV1           SyncEntityType = "AssetOcrDeleteV1"
@@ -1789,6 +1790,7 @@ const (
 	SyncEntityTypeAssetV1                    SyncEntityType = "AssetV1"
 	SyncEntityTypeAssetV2                    SyncEntityType = "AssetV2"
 	SyncEntityTypeAuthUserV1                 SyncEntityType = "AuthUserV1"
+	SyncEntityTypeAuthUserV2                 SyncEntityType = "AuthUserV2"
 	SyncEntityTypeMemoryDeleteV1             SyncEntityType = "MemoryDeleteV1"
 	SyncEntityTypeMemoryToAssetDeleteV1      SyncEntityType = "MemoryToAssetDeleteV1"
 	SyncEntityTypeMemoryToAssetV1            SyncEntityType = "MemoryToAssetV1"
@@ -1871,6 +1873,8 @@ func (e SyncEntityType) Valid() bool {
 		return true
 	case SyncEntityTypeAssetFaceV2:
 		return true
+	case SyncEntityTypeAssetFaceV3:
+		return true
 	case SyncEntityTypeAssetMetadataDeleteV1:
 		return true
 	case SyncEntityTypeAssetMetadataV1:
@@ -1884,6 +1888,8 @@ func (e SyncEntityType) Valid() bool {
 	case SyncEntityTypeAssetV2:
 		return true
 	case SyncEntityTypeAuthUserV1:
+		return true
+	case SyncEntityTypeAuthUserV2:
 		return true
 	case SyncEntityTypeMemoryDeleteV1:
 		return true
@@ -1957,11 +1963,13 @@ const (
 	SyncRequestTypeAssetExifsV1        SyncRequestType = "AssetExifsV1"
 	SyncRequestTypeAssetFacesV1        SyncRequestType = "AssetFacesV1"
 	SyncRequestTypeAssetFacesV2        SyncRequestType = "AssetFacesV2"
+	SyncRequestTypeAssetFacesV3        SyncRequestType = "AssetFacesV3"
 	SyncRequestTypeAssetMetadataV1     SyncRequestType = "AssetMetadataV1"
 	SyncRequestTypeAssetOcrV1          SyncRequestType = "AssetOcrV1"
 	SyncRequestTypeAssetsV1            SyncRequestType = "AssetsV1"
 	SyncRequestTypeAssetsV2            SyncRequestType = "AssetsV2"
 	SyncRequestTypeAuthUsersV1         SyncRequestType = "AuthUsersV1"
+	SyncRequestTypeAuthUsersV2         SyncRequestType = "AuthUsersV2"
 	SyncRequestTypeMemoriesV1          SyncRequestType = "MemoriesV1"
 	SyncRequestTypeMemoryToAssetsV1    SyncRequestType = "MemoryToAssetsV1"
 	SyncRequestTypePartnerAssetExifsV1 SyncRequestType = "PartnerAssetExifsV1"
@@ -2000,6 +2008,8 @@ func (e SyncRequestType) Valid() bool {
 		return true
 	case SyncRequestTypeAssetFacesV2:
 		return true
+	case SyncRequestTypeAssetFacesV3:
+		return true
 	case SyncRequestTypeAssetMetadataV1:
 		return true
 	case SyncRequestTypeAssetOcrV1:
@@ -2009,6 +2019,8 @@ func (e SyncRequestType) Valid() bool {
 	case SyncRequestTypeAssetsV2:
 		return true
 	case SyncRequestTypeAuthUsersV1:
+		return true
+	case SyncRequestTypeAuthUsersV2:
 		return true
 	case SyncRequestTypeMemoriesV1:
 		return true
@@ -8187,7 +8199,7 @@ type GetTimeBucketParams struct {
 	// TagId Filter assets with a specific tag
 	TagId *openapi_types.UUID `form:"tagId,omitempty" json:"tagId,omitempty"`
 
-	// TimeBucket Time bucket identifier in YYYY-MM-DD format
+	// TimeBucket Time bucket identifier in YYYY-MM-DDT00:00:00.000Z format
 	TimeBucket string `form:"timeBucket" json:"timeBucket"`
 
 	// UserId Filter assets by specific user ID
@@ -8521,13 +8533,18 @@ type CreatePersonJSONRequestBody = PersonCreateDto
 // UpdatePeopleJSONRequestBody defines body for UpdatePeople for application/json ContentType.
 type UpdatePeopleJSONRequestBody = PeopleUpdateDto
 
+// MergePeopleJSONRequestBody defines body for MergePeople for application/json ContentType.
+type MergePeopleJSONRequestBody = MergePersonDto
+
 // UpdatePersonJSONRequestBody defines body for UpdatePerson for application/json ContentType.
 //
 // Deprecated: this type has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 type UpdatePersonJSONRequestBody = PersonUpdateDto
 
-// MergePersonJSONRequestBody defines body for MergePerson for application/json ContentType.
-type MergePersonJSONRequestBody = MergePersonDto
+// MergePersonLegacyJSONRequestBody defines body for MergePersonLegacy for application/json ContentType.
+//
+// Deprecated: this type has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+type MergePersonLegacyJSONRequestBody = MergePersonDto
 
 // ReassignFacesJSONRequestBody defines body for ReassignFaces for application/json ContentType.
 type ReassignFacesJSONRequestBody = AssetFaceUpdateDto
@@ -10794,6 +10811,24 @@ type ClientInterface interface {
 	// Corresponds with PUT /people (the `UpdatePeople` operationId).
 	UpdatePeople(ctx context.Context, body UpdatePeopleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// MergePeopleWithBody Merge people
+	//
+	// Merge an ordered list of people together into a single person. The final name and birth date are always the first defined value, following the order. Also automatically merges people for other users in the cluster group, skipping people that would result in overriding a previously set name or birth date.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /people/merge (the `MergePeople` operationId).
+	MergePeopleWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// MergePeople Merge people
+	//
+	// Merge an ordered list of people together into a single person. The final name and birth date are always the first defined value, following the order. Also automatically merges people for other users in the cluster group, skipping people that would result in overriding a previously set name or birth date.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /people/merge (the `MergePeople` operationId).
+	MergePeople(ctx context.Context, body MergePeopleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// DeletePerson Delete person
 	//
 	// Delete an individual person.
@@ -10830,23 +10865,27 @@ type ClientInterface interface {
 	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdatePerson(ctx context.Context, id openapi_types.UUID, body UpdatePersonJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// MergePersonWithBody Merge people
+	// MergePersonLegacyWithBody Merge people
 	//
 	// Merge a list of people into the person specified in the path parameter.
 	//
 	// Takes any type of body and a specified content type.
 	//
-	// Corresponds with POST /people/{id}/merge (the `MergePerson` operationId).
-	MergePersonWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// Corresponds with POST /people/{id}/merge (the `MergePersonLegacy` operationId).
+	//
+	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+	MergePersonLegacyWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// MergePerson Merge people
+	// MergePersonLegacy Merge people
 	//
 	// Merge a list of people into the person specified in the path parameter.
 	//
 	// Takes a body of the `application/json` content type.
 	//
-	// Corresponds with POST /people/{id}/merge (the `MergePerson` operationId).
-	MergePerson(ctx context.Context, id openapi_types.UUID, body MergePersonJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// Corresponds with POST /people/{id}/merge (the `MergePersonLegacy` operationId).
+	//
+	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+	MergePersonLegacy(ctx context.Context, id openapi_types.UUID, body MergePersonLegacyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ReassignFacesWithBody Reassign faces
 	//
@@ -16201,6 +16240,44 @@ func (c *Client) UpdatePeople(ctx context.Context, body UpdatePeopleJSONRequestB
 	return c.Client.Do(req)
 }
 
+// MergePeopleWithBody Merge people
+//
+// Merge an ordered list of people together into a single person. The final name and birth date are always the first defined value, following the order. Also automatically merges people for other users in the cluster group, skipping people that would result in overriding a previously set name or birth date.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /people/merge (the `MergePeople` operationId).
+func (c *Client) MergePeopleWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMergePeopleRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// MergePeople Merge people
+//
+// Merge an ordered list of people together into a single person. The final name and birth date are always the first defined value, following the order. Also automatically merges people for other users in the cluster group, skipping people that would result in overriding a previously set name or birth date.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /people/merge (the `MergePeople` operationId).
+func (c *Client) MergePeople(ctx context.Context, body MergePeopleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMergePeopleRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // DeletePerson Delete person
 //
 // Delete an individual person.
@@ -16275,15 +16352,16 @@ func (c *Client) UpdatePerson(ctx context.Context, id openapi_types.UUID, body U
 	return c.Client.Do(req)
 }
 
-// MergePersonWithBody Merge people
+// MergePersonLegacyWithBody Merge people
 //
 // Merge a list of people into the person specified in the path parameter.
 //
 // Takes any type of body and a specified content type.
 //
-// Corresponds with POST /people/{id}/merge (the `MergePerson` operationId).
-func (c *Client) MergePersonWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewMergePersonRequestWithBody(c.Server, id, contentType, body)
+// Corresponds with POST /people/{id}/merge (the `MergePersonLegacy` operationId).
+// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+func (c *Client) MergePersonLegacyWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMergePersonLegacyRequestWithBody(c.Server, id, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -16294,15 +16372,16 @@ func (c *Client) MergePersonWithBody(ctx context.Context, id openapi_types.UUID,
 	return c.Client.Do(req)
 }
 
-// MergePerson Merge people
+// MergePersonLegacy Merge people
 //
 // Merge a list of people into the person specified in the path parameter.
 //
 // Takes a body of the `application/json` content type.
 //
-// Corresponds with POST /people/{id}/merge (the `MergePerson` operationId).
-func (c *Client) MergePerson(ctx context.Context, id openapi_types.UUID, body MergePersonJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewMergePersonRequest(c.Server, id, body)
+// Corresponds with POST /people/{id}/merge (the `MergePersonLegacy` operationId).
+// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+func (c *Client) MergePersonLegacy(ctx context.Context, id openapi_types.UUID, body MergePersonLegacyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMergePersonLegacyRequest(c.Server, id, body)
 	if err != nil {
 		return nil, err
 	}
@@ -26391,6 +26470,46 @@ func NewUpdatePeopleRequestWithBody(server string, contentType string, body io.R
 	return req, nil
 }
 
+// NewMergePeopleRequest calls the generic MergePeople builder with application/json body
+func NewMergePeopleRequest(server string, body MergePeopleJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewMergePeopleRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewMergePeopleRequestWithBody constructs an http.Request for the MergePeople method, with any body, and a specified content type
+func NewMergePeopleRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/people/merge")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewDeletePersonRequest constructs an http.Request for the DeletePerson method
 func NewDeletePersonRequest(server string, id openapi_types.UUID) (*http.Request, error) {
 	var err error
@@ -26506,19 +26625,19 @@ func NewUpdatePersonRequestWithBody(server string, id openapi_types.UUID, conten
 	return req, nil
 }
 
-// NewMergePersonRequest calls the generic MergePerson builder with application/json body
-func NewMergePersonRequest(server string, id openapi_types.UUID, body MergePersonJSONRequestBody) (*http.Request, error) {
+// NewMergePersonLegacyRequest calls the generic MergePersonLegacy builder with application/json body
+func NewMergePersonLegacyRequest(server string, id openapi_types.UUID, body MergePersonLegacyJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewMergePersonRequestWithBody(server, id, "application/json", bodyReader)
+	return NewMergePersonLegacyRequestWithBody(server, id, "application/json", bodyReader)
 }
 
-// NewMergePersonRequestWithBody constructs an http.Request for the MergePerson method, with any body, and a specified content type
-func NewMergePersonRequestWithBody(server string, id openapi_types.UUID, contentType string, body io.Reader) (*http.Request, error) {
+// NewMergePersonLegacyRequestWithBody constructs an http.Request for the MergePersonLegacy method, with any body, and a specified content type
+func NewMergePersonLegacyRequestWithBody(server string, id openapi_types.UUID, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -33962,6 +34081,24 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PUT /people (the `UpdatePeople` operationId).
 	UpdatePeopleWithResponse(ctx context.Context, body UpdatePeopleJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdatePeopleResponse, error)
 
+	// MergePeopleWithBodyWithResponse Merge people
+	//
+	// Merge an ordered list of people together into a single person. The final name and birth date are always the first defined value, following the order. Also automatically merges people for other users in the cluster group, skipping people that would result in overriding a previously set name or birth date.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /people/merge (the `MergePeople` operationId).
+	MergePeopleWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MergePeopleResponse, error)
+
+	// MergePeopleWithResponse Merge people
+	//
+	// Merge an ordered list of people together into a single person. The final name and birth date are always the first defined value, following the order. Also automatically merges people for other users in the cluster group, skipping people that would result in overriding a previously set name or birth date.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /people/merge (the `MergePeople` operationId).
+	MergePeopleWithResponse(ctx context.Context, body MergePeopleJSONRequestBody, reqEditors ...RequestEditorFn) (*MergePeopleResponse, error)
+
 	// DeletePersonWithResponse Delete person
 	//
 	// Delete an individual person.
@@ -34002,23 +34139,27 @@ type ClientWithResponsesInterface interface {
 	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdatePersonWithResponse(ctx context.Context, id openapi_types.UUID, body UpdatePersonJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdatePersonResponse, error)
 
-	// MergePersonWithBodyWithResponse Merge people
+	// MergePersonLegacyWithBodyWithResponse Merge people
 	//
 	// Merge a list of people into the person specified in the path parameter.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Corresponds with POST /people/{id}/merge (the `MergePerson` operationId).
-	MergePersonWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MergePersonResponse, error)
+	// Corresponds with POST /people/{id}/merge (the `MergePersonLegacy` operationId).
+	//
+	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+	MergePersonLegacyWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MergePersonLegacyResponse, error)
 
-	// MergePersonWithResponse Merge people
+	// MergePersonLegacyWithResponse Merge people
 	//
 	// Merge a list of people into the person specified in the path parameter.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Corresponds with POST /people/{id}/merge (the `MergePerson` operationId).
-	MergePersonWithResponse(ctx context.Context, id openapi_types.UUID, body MergePersonJSONRequestBody, reqEditors ...RequestEditorFn) (*MergePersonResponse, error)
+	// Corresponds with POST /people/{id}/merge (the `MergePersonLegacy` operationId).
+	//
+	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+	MergePersonLegacyWithResponse(ctx context.Context, id openapi_types.UUID, body MergePersonLegacyJSONRequestBody, reqEditors ...RequestEditorFn) (*MergePersonLegacyResponse, error)
 
 	// ReassignFacesWithBodyWithResponse Reassign faces
 	//
@@ -41532,6 +41673,47 @@ func (r UpdatePeopleResponse) ContentType() string {
 	return ""
 }
 
+type MergePeopleResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]BulkIdResponseDto
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r MergePeopleResponse) GetJSON200() *[]BulkIdResponseDto {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r MergePeopleResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r MergePeopleResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r MergePeopleResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r MergePeopleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type DeletePersonResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -41648,7 +41830,7 @@ func (r UpdatePersonResponse) ContentType() string {
 	return ""
 }
 
-type MergePersonResponse struct {
+type MergePersonLegacyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
@@ -41656,17 +41838,17 @@ type MergePersonResponse struct {
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r MergePersonResponse) GetJSON200() *[]BulkIdResponseDto {
+func (r MergePersonLegacyResponse) GetJSON200() *[]BulkIdResponseDto {
 	return r.JSON200
 }
 
 // GetBody returns the raw response body bytes
-func (r MergePersonResponse) GetBody() []byte {
+func (r MergePersonLegacyResponse) GetBody() []byte {
 	return r.Body
 }
 
 // Status returns HTTPResponse.Status
-func (r MergePersonResponse) Status() string {
+func (r MergePersonLegacyResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -41674,7 +41856,7 @@ func (r MergePersonResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r MergePersonResponse) StatusCode() int {
+func (r MergePersonLegacyResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -41682,7 +41864,7 @@ func (r MergePersonResponse) StatusCode() int {
 }
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r MergePersonResponse) ContentType() string {
+func (r MergePersonLegacyResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -49559,6 +49741,36 @@ func (c *ClientWithResponses) UpdatePeopleWithResponse(ctx context.Context, body
 	return ParseUpdatePeopleResponse(rsp)
 }
 
+// MergePeopleWithBodyWithResponse Merge people
+//
+// Merge an ordered list of people together into a single person. The final name and birth date are always the first defined value, following the order. Also automatically merges people for other users in the cluster group, skipping people that would result in overriding a previously set name or birth date.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /people/merge (the `MergePeople` operationId).
+func (c *ClientWithResponses) MergePeopleWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MergePeopleResponse, error) {
+	rsp, err := c.MergePeopleWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseMergePeopleResponse(rsp)
+}
+
+// MergePeopleWithResponse Merge people
+//
+// Merge an ordered list of people together into a single person. The final name and birth date are always the first defined value, following the order. Also automatically merges people for other users in the cluster group, skipping people that would result in overriding a previously set name or birth date.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /people/merge (the `MergePeople` operationId).
+func (c *ClientWithResponses) MergePeopleWithResponse(ctx context.Context, body MergePeopleJSONRequestBody, reqEditors ...RequestEditorFn) (*MergePeopleResponse, error) {
+	rsp, err := c.MergePeople(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseMergePeopleResponse(rsp)
+}
+
 // DeletePersonWithResponse Delete person
 //
 // Delete an individual person.
@@ -49622,34 +49834,37 @@ func (c *ClientWithResponses) UpdatePersonWithResponse(ctx context.Context, id o
 	return ParseUpdatePersonResponse(rsp)
 }
 
-// MergePersonWithBodyWithResponse Merge people
+// MergePersonLegacyWithBodyWithResponse Merge people
 //
 // Merge a list of people into the person specified in the path parameter.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
-// Corresponds with POST /people/{id}/merge (the `MergePerson` operationId).
-func (c *ClientWithResponses) MergePersonWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MergePersonResponse, error) {
-	rsp, err := c.MergePersonWithBody(ctx, id, contentType, body, reqEditors...)
+// Corresponds with POST /people/{id}/merge (the `MergePersonLegacy` operationId).
+//
+// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+func (c *ClientWithResponses) MergePersonLegacyWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MergePersonLegacyResponse, error) {
+	rsp, err := c.MergePersonLegacyWithBody(ctx, id, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseMergePersonResponse(rsp)
+	return ParseMergePersonLegacyResponse(rsp)
 }
 
-// MergePersonWithResponse Merge people
+// MergePersonLegacyWithResponse Merge people
 //
 // Merge a list of people into the person specified in the path parameter.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
-// Corresponds with POST /people/{id}/merge (the `MergePerson` operationId).
-func (c *ClientWithResponses) MergePersonWithResponse(ctx context.Context, id openapi_types.UUID, body MergePersonJSONRequestBody, reqEditors ...RequestEditorFn) (*MergePersonResponse, error) {
-	rsp, err := c.MergePerson(ctx, id, body, reqEditors...)
+// Corresponds with POST /people/{id}/merge (the `MergePersonLegacy` operationId).
+// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+func (c *ClientWithResponses) MergePersonLegacyWithResponse(ctx context.Context, id openapi_types.UUID, body MergePersonLegacyJSONRequestBody, reqEditors ...RequestEditorFn) (*MergePersonLegacyResponse, error) {
+	rsp, err := c.MergePersonLegacy(ctx, id, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseMergePersonResponse(rsp)
+	return ParseMergePersonLegacyResponse(rsp)
 }
 
 // ReassignFacesWithBodyWithResponse Reassign faces
@@ -55494,6 +55709,32 @@ func ParseUpdatePeopleResponse(rsp *http.Response) (*UpdatePeopleResponse, error
 	return response, nil
 }
 
+// ParseMergePeopleResponse parses an HTTP response from a MergePeopleWithResponse call
+func ParseMergePeopleResponse(rsp *http.Response) (*MergePeopleResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &MergePeopleResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []BulkIdResponseDto
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseDeletePersonResponse parses an HTTP response from a DeletePersonWithResponse call
 func ParseDeletePersonResponse(rsp *http.Response) (*DeletePersonResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -55562,15 +55803,15 @@ func ParseUpdatePersonResponse(rsp *http.Response) (*UpdatePersonResponse, error
 	return response, nil
 }
 
-// ParseMergePersonResponse parses an HTTP response from a MergePersonWithResponse call
-func ParseMergePersonResponse(rsp *http.Response) (*MergePersonResponse, error) {
+// ParseMergePersonLegacyResponse parses an HTTP response from a MergePersonLegacyWithResponse call
+func ParseMergePersonLegacyResponse(rsp *http.Response) (*MergePersonLegacyResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &MergePersonResponse{
+	response := &MergePersonLegacyResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

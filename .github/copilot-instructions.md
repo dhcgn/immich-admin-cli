@@ -2,7 +2,7 @@
 
 ## Overview
 
-This is a **Go CLI tool** for administering an Immich photo server. It enables bulk operations not available in the Immich web UI — compression, conversion, repair, and deletion of assets at scale.
+This is a **Go CLI tool** for managing an Immich photo server. It enables bulk operations not available in the Immich web UI — compression, conversion, repair, and deletion of assets at scale.
 
 ## API Alignment
 

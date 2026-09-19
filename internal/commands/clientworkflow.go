@@ -42,6 +42,7 @@ func ClientWorkflow() *cli.Command {
 			repairAssetsCommand(),
 			fixAlbumDatesCommand(),
 			downloadAlbumCommand(),
+			mergeAlbumCommand(),
 		},
 	}
 }
@@ -561,6 +562,115 @@ func clientWorkflowFixAlbumDates(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	return workflows.FixAlbumDates(ctx, c, checks, opts)
+}
+
+func mergeAlbumCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "merge-album",
+		Usage: "Move every asset from one album into another, optionally deleting the emptied source",
+		Description: "Adds every asset in --from to --into (PUT /albums/{id}/assets), removes the " +
+			"moved assets from --from (DELETE /albums/{id}/assets), and with --delete-empty-source " +
+			"deletes --from when it holds no assets afterwards (DELETE /albums/{id}). Only asset " +
+			"IDs confirmed present in the target are removed from the source, and the delete is " +
+			"always last, so a failed add never loses an asset.",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:     "from",
+				Usage:    "source album `UUID` (assets move out of it)",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:     "into",
+				Usage:    "target album `UUID` (assets move into it)",
+				Required: true,
+			},
+			&cli.BoolFlag{
+				Name:  "delete-empty-source",
+				Usage: "delete the source album when it holds no assets after the move",
+			},
+			&cli.BoolFlag{
+				Name:  "dry-run",
+				Usage: "print the merge plan without changing anything",
+			},
+			&cli.BoolFlag{
+				Name:  "yes",
+				Usage: "skip the confirmation prompt before moving assets",
+			},
+		},
+		Action: clientWorkflowMergeAlbum,
+	}
+}
+
+func clientWorkflowMergeAlbum(ctx context.Context, cmd *cli.Command) error {
+	if cmd.Args().Len() > 0 {
+		return fmt.Errorf("merge-album takes no positional arguments; pass albums as --from/--into UUID flags (got %v)", cmd.Args().Slice())
+	}
+
+	from, into, err := validateMergeAlbumFlags(cmd.String("from"), cmd.String("into"))
+	if err != nil {
+		return err
+	}
+	dryRun := cmd.Bool("dry-run")
+
+	c, err := newClient(ctx, cmd)
+	if err != nil {
+		return err
+	}
+
+	// Resolve both albums up front so the confirmation names real albums
+	// (and fails fast on unknown IDs before anything changes).
+	fromAlbum, err := workflows.ResolveAlbum(ctx, c, &from, "")
+	if err != nil {
+		return err
+	}
+	intoAlbum, err := workflows.ResolveAlbum(ctx, c, &into, "")
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Merge %d asset(s) from %q (%s) into %q (%s)%s.\n",
+		fromAlbum.AssetCount, fromAlbum.AlbumName, from,
+		intoAlbum.AlbumName, into, deleteSuffix(cmd.Bool("delete-empty-source")))
+
+	if !dryRun && !cmd.Bool("yes") {
+		fmt.Print("Proceed? [y/N]: ")
+		if !confirm(os.Stdin) {
+			fmt.Println("Aborted.")
+			return nil
+		}
+	}
+
+	return workflows.MergeAlbums(ctx, c, workflows.MergeAlbumOptions{
+		From:              from,
+		Into:              into,
+		DeleteEmptySource: cmd.Bool("delete-empty-source"),
+		DryRun:            dryRun,
+	})
+}
+
+// deleteSuffix renders the --delete-empty-source tail of the merge-album
+// confirmation line.
+func deleteSuffix(deleteEmptySource bool) string {
+	if deleteEmptySource {
+		return ", deleting the source album when empty"
+	}
+	return ""
+}
+
+// validateMergeAlbumFlags parses --from/--into as UUIDs and rejects merging
+// an album into itself. Pure so it is directly unit-testable.
+func validateMergeAlbumFlags(fromStr, intoStr string) (openapi_types.UUID, openapi_types.UUID, error) {
+	from, err := uuid.Parse(strings.TrimSpace(fromStr))
+	if err != nil {
+		return openapi_types.UUID{}, openapi_types.UUID{}, fmt.Errorf("invalid --from %q: %w", fromStr, err)
+	}
+	into, err := uuid.Parse(strings.TrimSpace(intoStr))
+	if err != nil {
+		return openapi_types.UUID{}, openapi_types.UUID{}, fmt.Errorf("invalid --into %q: %w", intoStr, err)
+	}
+	if from == into {
+		return openapi_types.UUID{}, openapi_types.UUID{}, fmt.Errorf("cannot merge album %s into itself: --from and --into must differ", fromStr)
+	}
+	return openapi_types.UUID(from), openapi_types.UUID(into), nil
 }
 
 // printAlbumDateCheck prints one album's report block to w: header line, web
@@ -1182,6 +1292,16 @@ func validateDownloadAlbumAlbumFlags(albumIDStr, albumName string) error {
 	return nil
 }
 
+// resolveDownloadAlbum resolves the download-album target: by ID directly,
+// or by name via the shared whitespace-tolerant lookup (a single
+// whitespace-variant match is offered, auto-accepted behind --yes).
+func resolveDownloadAlbum(ctx context.Context, c *client.Client, albumID *openapi_types.UUID, albumName string, autoYes bool) (immichapi.AlbumResponseDto, error) {
+	if albumID != nil {
+		return workflows.ResolveAlbum(ctx, c, albumID, "")
+	}
+	return resolveAlbumByName(ctx, c, os.Stdin, os.Stdout, albumName, autoYes)
+}
+
 // resolveDownloadAlbumSize validates the --size flag value against the full
 // AssetMediaSize enum (fullsize, original, preview, thumbnail).
 // "original" is accepted here even though the OpenAPI spec deprecates
@@ -1407,7 +1527,7 @@ func clientWorkflowDownloadAlbum(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	album, err := workflows.ResolveAlbum(ctx, c, albumID, albumName)
+	album, err := resolveDownloadAlbum(ctx, c, albumID, albumName, yes)
 	if err != nil {
 		return err
 	}
