@@ -27,7 +27,7 @@ const skillCommandName = "return-agent-skill"
 // description ≤1024 chars (both enforced by skill_test.go).
 const skillFrontmatter = `---
 name: immich-admin-cli
-description: Administer an Immich photo server from the command line: manage assets, albums, tags, and users; search by metadata; download originals and thumbnails; upload files; inspect server workflows and their run logs; and run client-side bulk workflows that find and repair corrupt photos, replace assets, re-encode media, and mirror albums locally. Use when working with Immich photo libraries, thumbnails, metadata, bulk tagging, or photo backup automation.
+description: Manage an Immich photo server from the command line: manage assets, albums, tags, and users; search by metadata; download originals and thumbnails; upload files; inspect server workflows and their run logs; and run client-side bulk workflows that find and repair corrupt photos, replace assets, re-encode media, and mirror albums locally. Use when working with Immich photo libraries, thumbnails, metadata, bulk tagging, or photo backup automation.
 compatibility: Requires the immich-admin CLI binary and network access to an Immich server v3.2.0 or newer.
 ---`
 
@@ -89,7 +89,7 @@ func writeSkillFile(out, text string) error {
 func buildSkillText(cmds []*cli.Command) string {
 	var b strings.Builder
 	b.WriteString(skillFrontmatter)
-	b.WriteString("\n\nThe `immich-admin` CLI administers an Immich photo server from the command " +
+	b.WriteString("\n\nThe `immich-admin` CLI manages an Immich photo server from the command " +
 		"line. Configure it with `--config FILE` (default `config.prod.yaml`) or the " +
 		"`IMMICH_SERVER` / `IMMICH_API_KEY` env vars; the server must be v3.2.0 or newer.\n")
 	b.WriteString("\n## Commands\n\nRun `immich-admin <command path> --help` for full details and examples.\n\n")

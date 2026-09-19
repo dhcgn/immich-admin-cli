@@ -1,10 +1,10 @@
 ---
 name: immich-admin-cli
-description: Administer an Immich photo server from the command line: manage assets, albums, tags, and users; search by metadata; download originals and thumbnails; upload files; inspect server workflows and their run logs; and run client-side bulk workflows that find and repair corrupt photos, replace assets, re-encode media, and mirror albums locally. Use when working with Immich photo libraries, thumbnails, metadata, bulk tagging, or photo backup automation.
+description: Manage an Immich photo server from the command line: manage assets, albums, tags, and users; search by metadata; download originals and thumbnails; upload files; inspect server workflows and their run logs; and run client-side bulk workflows that find and repair corrupt photos, replace assets, re-encode media, and mirror albums locally. Use when working with Immich photo libraries, thumbnails, metadata, bulk tagging, or photo backup automation.
 compatibility: Requires the immich-admin CLI binary and network access to an Immich server v3.2.0 or newer.
 ---
 
-The `immich-admin` CLI administers an Immich photo server from the command line. Configure it with `--config FILE` (default `config.prod.yaml`) or the `IMMICH_SERVER` / `IMMICH_API_KEY` env vars; the server must be v3.2.0 or newer.
+The `immich-admin` CLI manages an Immich photo server from the command line. Configure it with `--config FILE` (default `config.prod.yaml`) or the `IMMICH_SERVER` / `IMMICH_API_KEY` env vars; the server must be v3.2.0 or newer.
 
 ## Commands
 

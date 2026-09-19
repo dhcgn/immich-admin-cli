@@ -1,4 +1,4 @@
-// immich-admin is a CLI for administering an Immich photo server.
+// immich-admin is a CLI for managing an Immich photo server.
 package main
 
 import (
@@ -35,7 +35,7 @@ func main() {
 
 	root := &cli.Command{
 		Name:    "immich-admin",
-		Usage:   "Administer an Immich photo server",
+		Usage:   "Manage an Immich photo server",
 		Version: fmt.Sprintf("%s (commit %s, built %s)", version, commit, date),
 		CommandNotFound: func(_ context.Context, cmd *cli.Command, name string) {
 			fmt.Fprintf(os.Stderr, "Unknown command %q. Run '%s --help' to see available commands.\n", name, cmd.FullName())
