@@ -1,6 +1,6 @@
 module github.com/dhcgn/immich-admin-cli
 
-go 1.26.1
+go 1.27
 
 require (
 	github.com/dhcgn/gh-update v0.0.3
