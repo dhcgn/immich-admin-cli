@@ -65,6 +65,24 @@ Keep the matched IDs, inspect, then act:
 immich-admin assets info --ids-file ids.txt
 ```
 
+### Before merge-album, sanity-check the pair
+
+Human output is lossy — always inspect both albums with `--json` first:
+
+```sh
+immich-admin albums get <FROM> --json
+immich-admin albums get <INTO> --json
+```
+
+Compare `startDate`/`endDate` (album time range) and scan `albumName`/
+`description` of both for year numbers (e.g. `\b(19|20)\d{2}\b`). For the
+per-asset spread, use `albums assets --album-id <ID> --json`
+(`localDateTime`/`fileCreatedAt`). If the years or time ranges don't
+overlap (e.g. source is "2010 USA", target is "2024 Garten"), the merge is
+probably unwanted — stop and ask the user whether to merge, keep the
+albums separate, or rename instead of merging blindly. Always run
+`client-workflow merge-album --dry-run` first.
+
 ### Canonical flows
 
 - **Corrupt hunt**: `client-workflow find-no-thumbhash --type IMAGE -q >
