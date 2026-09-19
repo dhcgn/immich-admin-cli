@@ -61,7 +61,7 @@ func findSimilarCommand() *cli.Command {
 func clientWorkflowFindSimilar(ctx context.Context, cmd *cli.Command) error {
 	args := cmd.Args().Slice()
 	if len(args) != 1 {
-		return fmt.Errorf("expected exactly 1 positional argument (FILE), got %d", len(args))
+		return incorrectUsage(cmd, "expected exactly 1 positional argument (FILE), got %d", len(args))
 	}
 	file := args[0]
 	if st, err := os.Stat(file); err != nil {
@@ -121,6 +121,19 @@ func clientWorkflowFindSimilar(ctx context.Context, cmd *cli.Command) error {
 		}
 	}
 	return nil
+}
+
+// incorrectUsage mimics the framework's own missing-required-flag output
+// ("Incorrect Usage: ..." plus the command help on stderr) for validation
+// failures the framework never sees — i.e. positional-arg checks inside the
+// Action, which run after flag parsing. It returns the error so the caller
+// can `return` it directly; main then prints the trailing "Error: ..." line,
+// exactly like a required-flag violation.
+func incorrectUsage(cmd *cli.Command, format string, args ...any) error {
+	err := fmt.Errorf(format, args...)
+	fmt.Fprintf(cmd.Root().ErrWriter, "Incorrect Usage: %s\n\n", err.Error())
+	_ = cli.ShowSubcommandHelp(cmd)
+	return err
 }
 
 // formatJSON pretty-prints a raw JSON response for --json output. Unparseable
