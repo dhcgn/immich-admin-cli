@@ -812,12 +812,15 @@ func (e MemorySearchOrder) Valid() bool {
 
 // Defines values for MemoryType.
 const (
+	Birthday  MemoryType = "birthday"
 	OnThisDay MemoryType = "on_this_day"
 )
 
 // Valid indicates whether the value is a known member of the MemoryType enum.
 func (e MemoryType) Valid() bool {
 	switch e {
+	case Birthday:
+		return true
 	case OnThisDay:
 		return true
 	default:
@@ -920,16 +923,31 @@ func (e OAuthTokenEndpointAuthMethod) Valid() bool {
 
 // Defines values for PartnerDirection.
 const (
-	SharedBy   PartnerDirection = "shared-by"
-	SharedWith PartnerDirection = "shared-with"
+	PartnerDirectionSharedBy   PartnerDirection = "shared-by"
+	PartnerDirectionSharedWith PartnerDirection = "shared-with"
 )
 
 // Valid indicates whether the value is a known member of the PartnerDirection enum.
 func (e PartnerDirection) Valid() bool {
 	switch e {
-	case SharedBy:
+	case PartnerDirectionSharedBy:
 		return true
-	case SharedWith:
+	case PartnerDirectionSharedWith:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PeopleUsersUpsertType.
+const (
+	PeopleUsersUpsertTypeEveryone PeopleUsersUpsertType = "everyone"
+)
+
+// Valid indicates whether the value is a known member of the PeopleUsersUpsertType enum.
+func (e PeopleUsersUpsertType) Valid() bool {
+	switch e {
+	case PeopleUsersUpsertTypeEveryone:
 		return true
 	default:
 		return false
@@ -1452,6 +1470,45 @@ func (e Permission) Valid() bool {
 	}
 }
 
+// Defines values for PersonUpdateStrategy.
+const (
+	PersonUpdateStrategyEveryone PersonUpdateStrategy = "everyone"
+	PersonUpdateStrategySelf     PersonUpdateStrategy = "self"
+)
+
+// Valid indicates whether the value is a known member of the PersonUpdateStrategy enum.
+func (e PersonUpdateStrategy) Valid() bool {
+	switch e {
+	case PersonUpdateStrategyEveryone:
+		return true
+	case PersonUpdateStrategySelf:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PersonUserRole.
+const (
+	Admin PersonUserRole = "admin"
+	Read  PersonUserRole = "read"
+	Write PersonUserRole = "write"
+)
+
+// Valid indicates whether the value is a known member of the PersonUserRole enum.
+func (e PersonUserRole) Valid() bool {
+	switch e {
+	case Admin:
+		return true
+	case Read:
+		return true
+	case Write:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for QueueCommand.
 const (
 	QueueCommandClearFailed QueueCommand = "clear-failed"
@@ -1704,6 +1761,24 @@ func (e SharedLinkType) Valid() bool {
 	}
 }
 
+// Defines values for SharingDirection.
+const (
+	SharingDirectionSharedBy   SharingDirection = "shared-by"
+	SharingDirectionSharedWith SharingDirection = "shared-with"
+)
+
+// Valid indicates whether the value is a known member of the SharingDirection enum.
+func (e SharingDirection) Valid() bool {
+	switch e {
+	case SharingDirectionSharedBy:
+		return true
+	case SharingDirectionSharedWith:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SourceType.
 const (
 	Exif            SourceType = "exif"
@@ -1794,7 +1869,9 @@ const (
 	SyncEntityTypeMemoryDeleteV1             SyncEntityType = "MemoryDeleteV1"
 	SyncEntityTypeMemoryToAssetDeleteV1      SyncEntityType = "MemoryToAssetDeleteV1"
 	SyncEntityTypeMemoryToAssetV1            SyncEntityType = "MemoryToAssetV1"
+	SyncEntityTypeMemoryToAssetV2            SyncEntityType = "MemoryToAssetV2"
 	SyncEntityTypeMemoryV1                   SyncEntityType = "MemoryV1"
+	SyncEntityTypeMemoryV2                   SyncEntityType = "MemoryV2"
 	SyncEntityTypePartnerAssetBackfillV1     SyncEntityType = "PartnerAssetBackfillV1"
 	SyncEntityTypePartnerAssetBackfillV2     SyncEntityType = "PartnerAssetBackfillV2"
 	SyncEntityTypePartnerAssetDeleteV1       SyncEntityType = "PartnerAssetDeleteV1"
@@ -1897,7 +1974,11 @@ func (e SyncEntityType) Valid() bool {
 		return true
 	case SyncEntityTypeMemoryToAssetV1:
 		return true
+	case SyncEntityTypeMemoryToAssetV2:
+		return true
 	case SyncEntityTypeMemoryV1:
+		return true
+	case SyncEntityTypeMemoryV2:
 		return true
 	case SyncEntityTypePartnerAssetBackfillV1:
 		return true
@@ -1971,7 +2052,9 @@ const (
 	SyncRequestTypeAuthUsersV1         SyncRequestType = "AuthUsersV1"
 	SyncRequestTypeAuthUsersV2         SyncRequestType = "AuthUsersV2"
 	SyncRequestTypeMemoriesV1          SyncRequestType = "MemoriesV1"
+	SyncRequestTypeMemoriesV2          SyncRequestType = "MemoriesV2"
 	SyncRequestTypeMemoryToAssetsV1    SyncRequestType = "MemoryToAssetsV1"
+	SyncRequestTypeMemoryToAssetsV2    SyncRequestType = "MemoryToAssetsV2"
 	SyncRequestTypePartnerAssetExifsV1 SyncRequestType = "PartnerAssetExifsV1"
 	SyncRequestTypePartnerAssetsV1     SyncRequestType = "PartnerAssetsV1"
 	SyncRequestTypePartnerAssetsV2     SyncRequestType = "PartnerAssetsV2"
@@ -2024,7 +2107,11 @@ func (e SyncRequestType) Valid() bool {
 		return true
 	case SyncRequestTypeMemoriesV1:
 		return true
+	case SyncRequestTypeMemoriesV2:
+		return true
 	case SyncRequestTypeMemoryToAssetsV1:
+		return true
+	case SyncRequestTypeMemoryToAssetsV2:
 		return true
 	case SyncRequestTypePartnerAssetExifsV1:
 		return true
@@ -3281,6 +3368,9 @@ type AssetFaceCreateDto struct {
 	// PersonId Person ID
 	PersonId openapi_types.UUID `json:"personId"`
 
+	// UserId User ID
+	UserId *openapi_types.UUID `json:"userId,omitempty"`
+
 	// Width Face bounding box width
 	Width int `json:"width"`
 
@@ -3338,6 +3428,9 @@ type AssetFaceUpdateItem struct {
 
 	// PersonId Person ID
 	PersonId openapi_types.UUID `json:"personId"`
+
+	// UserId User ID
+	UserId *openapi_types.UUID `json:"userId,omitempty"`
 }
 
 // AssetFileResponseDto defines model for AssetFileResponseDto.
@@ -4509,7 +4602,7 @@ type MemoriesUpdate struct {
 type MemoryCreateDto struct {
 	// AssetIds Asset IDs to associate with memory
 	AssetIds *[]openapi_types.UUID `json:"assetIds,omitempty"`
-	Data     OnThisDayDto          `json:"data"`
+	Data     MemoryDataDto         `json:"data"`
 
 	// HideAt Date when memory should be hidden
 	//
@@ -4538,6 +4631,18 @@ type MemoryCreateDto struct {
 	Type MemoryType `json:"type"`
 }
 
+// MemoryDataDto defines model for MemoryDataDto.
+type MemoryDataDto struct {
+	// PersonId Person ID (birthday memories)
+	PersonId *openapi_types.UUID `json:"personId,omitempty"`
+
+	// PersonName Name of the person when the memory was created (birthday memories)
+	PersonName *string `json:"personName,omitempty"`
+
+	// Year Year of the memory
+	Year int `json:"year"`
+}
+
 // MemoryResponseDto defines model for MemoryResponseDto.
 type MemoryResponseDto struct {
 	Assets []AssetResponseDto `json:"assets"`
@@ -4545,8 +4650,8 @@ type MemoryResponseDto struct {
 	// CreatedAt Creation date
 	//
 	// Example: 2024-01-01T00:00:00.000Z
-	CreatedAt time.Time    `json:"createdAt"`
-	Data      OnThisDayDto `json:"data"`
+	CreatedAt time.Time     `json:"createdAt"`
+	Data      MemoryDataDto `json:"data"`
 
 	// DeletedAt Deletion date
 	//
@@ -4970,12 +5075,6 @@ type OAuthConfigDto struct {
 // OAuthTokenEndpointAuthMethod OAuth token endpoint auth method
 type OAuthTokenEndpointAuthMethod string
 
-// OnThisDayDto defines model for OnThisDayDto.
-type OnThisDayDto struct {
-	// Year Year for on this day memory
-	Year int `json:"year"`
-}
-
 // OnboardingDto defines model for OnboardingDto.
 type OnboardingDto struct {
 	// IsOnboarded Is user onboarded
@@ -5027,6 +5126,13 @@ type PartnerUpdateDto struct {
 	InTimeline bool `json:"inTimeline"`
 }
 
+// PeopleDeleteDto defines model for PeopleDeleteDto.
+type PeopleDeleteDto struct {
+	// Ids IDs to process
+	Ids    []openapi_types.UUID `json:"ids"`
+	UserId *string              `json:"userId,omitempty"`
+}
+
 // PeopleResponse defines model for PeopleResponse.
 type PeopleResponse struct {
 	// Enabled Whether people are enabled
@@ -5037,6 +5143,9 @@ type PeopleResponse struct {
 
 	// SidebarWeb Whether people appear in web sidebar
 	SidebarWeb bool `json:"sidebarWeb"`
+
+	// UpdateStrategy Which person records to update when editing a person
+	UpdateStrategy PersonUpdateStrategy `json:"updateStrategy"`
 }
 
 // PeopleResponseDto People response
@@ -5062,6 +5171,9 @@ type PeopleUpdate struct {
 
 	// SidebarWeb Whether people appear in web sidebar
 	SidebarWeb *bool `json:"sidebarWeb,omitempty"`
+
+	// UpdateStrategy Which person records to update when editing a person
+	UpdateStrategy *PersonUpdateStrategy `json:"updateStrategy,omitempty"`
 }
 
 // PeopleUpdateDto defines model for PeopleUpdateDto.
@@ -5092,7 +5204,52 @@ type PeopleUpdateItem struct {
 
 	// Name Person name
 	Name *string `json:"name,omitempty"`
+
+	// UserId Restrict the update to the person record of this User ID
+	UserId *openapi_types.UUID `json:"userId,omitempty"`
 }
+
+// PeopleUserResponseDto defines model for PeopleUserResponseDto.
+type PeopleUserResponseDto struct {
+	// AvatarColor User avatar color
+	AvatarColor UserAvatarColor `json:"avatarColor"`
+
+	// Email User email
+	Email openapi_types.Email `json:"email"`
+
+	// Id User ID
+	Id openapi_types.UUID `json:"id"`
+
+	// Name User name
+	Name string `json:"name"`
+
+	// ProfileChangedAt Profile change date
+	ProfileChangedAt time.Time `json:"profileChangedAt"`
+
+	// ProfileImagePath Profile image path
+	ProfileImagePath string `json:"profileImagePath"`
+
+	// Role Levels of access for managing people resources on behalf of another user.
+	Role PersonUserRole `json:"role"`
+}
+
+// PeopleUsersUpsertDto defines model for PeopleUsersUpsertDto.
+type PeopleUsersUpsertDto struct {
+	// PersonIds Person IDs, required when type is omitted
+	PersonIds *[]openapi_types.UUID `json:"personIds,omitempty"`
+
+	// Role Levels of access for managing people resources on behalf of another user.
+	Role PersonUserRole `json:"role"`
+
+	// SharedWithIds User IDs that should be given access to the person
+	SharedWithIds []openapi_types.UUID `json:"sharedWithIds"`
+
+	// Type Which people to update when personIds is omitted
+	Type *PeopleUsersUpsertType `json:"type,omitempty"`
+}
+
+// PeopleUsersUpsertType Which people to update when personIds is omitted
+type PeopleUsersUpsertType string
 
 // Permission List of permissions
 type Permission string
@@ -5115,6 +5272,21 @@ type PersonCreateDto struct {
 	Name *string `json:"name,omitempty"`
 }
 
+// PersonDeleteDto defines model for PersonDeleteDto.
+type PersonDeleteDto struct {
+	UserId *string `json:"userId,omitempty"`
+}
+
+// PersonOtherResponseDto defines model for PersonOtherResponseDto.
+type PersonOtherResponseDto struct {
+	BirthDate *string `json:"birthDate"`
+	Name      string  `json:"name"`
+
+	// Role Levels of access for managing people resources on behalf of another user.
+	Role       PersonUserRole     `json:"role"`
+	SharedById openapi_types.UUID `json:"sharedById"`
+}
+
 // PersonResponseDto defines model for PersonResponseDto.
 type PersonResponseDto struct {
 	// BirthDate Person date of birth
@@ -5133,7 +5305,14 @@ type PersonResponseDto struct {
 	IsHidden bool `json:"isHidden"`
 
 	// Name Person name
-	Name string `json:"name"`
+	Name        string                   `json:"name"`
+	OtherPeople []PersonOtherResponseDto `json:"otherPeople"`
+
+	// SharedBy Users that gave the current user access to this person
+	SharedBy []PeopleUserResponseDto `json:"sharedBy"`
+
+	// SharedWith Users the current user gave access to this person
+	SharedWith []PeopleUserResponseDto `json:"sharedWith"`
 
 	// ThumbnailPath Thumbnail path
 	ThumbnailPath string `json:"thumbnailPath"`
@@ -5167,6 +5346,44 @@ type PersonUpdateDto struct {
 
 	// Name Person name
 	Name *string `json:"name,omitempty"`
+
+	// UserId Restrict the update to the person record of this User ID
+	UserId *openapi_types.UUID `json:"userId,omitempty"`
+}
+
+// PersonUpdateStrategy Which person records to update when editing a person
+type PersonUpdateStrategy string
+
+// PersonUserRole Levels of access for managing people resources on behalf of another user.
+type PersonUserRole string
+
+// PersonUsersDeleteDto defines model for PersonUsersDeleteDto.
+type PersonUsersDeleteDto = []struct {
+	// PersonId Person ID
+	PersonId openapi_types.UUID `json:"personId"`
+
+	// SharedById User ID of the user that gave access to the person
+	SharedById *openapi_types.UUID `json:"sharedById,omitempty"`
+
+	// SharedWithId User ID of the user that was given access to the person
+	SharedWithId openapi_types.UUID `json:"sharedWithId"`
+}
+
+// PersonUsersResponseDto defines model for PersonUsersResponseDto.
+type PersonUsersResponseDto = []struct {
+	// PersonId Person ID
+	PersonId openapi_types.UUID `json:"personId"`
+
+	// Role Levels of access for managing people resources on behalf of another user.
+	Role     PersonUserRole  `json:"role"`
+	SharedBy UserResponseDto `json:"sharedBy"`
+
+	// SharedById User ID of the user that gave access to this person
+	SharedById openapi_types.UUID `json:"sharedById"`
+	SharedWith UserResponseDto    `json:"sharedWith"`
+
+	// SharedWithId User ID of the user that was given access to this person
+	SharedWithId openapi_types.UUID `json:"sharedWithId"`
 }
 
 // PinCodeChangeDto defines model for PinCodeChangeDto.
@@ -6333,6 +6550,9 @@ type SharedLinksUpdate struct {
 	// SidebarWeb Whether shared links appear in web sidebar
 	SidebarWeb *bool `json:"sidebarWeb,omitempty"`
 }
+
+// SharingDirection Sharing direction
+type SharingDirection string
 
 // SignUpDto defines model for SignUpDto.
 type SignUpDto struct {
@@ -7926,14 +8146,46 @@ type GetAllPeopleParams struct {
 	// ClosestPersonId Closest person ID for similarity search
 	ClosestPersonId *openapi_types.UUID `form:"closestPersonId,omitempty" json:"closestPersonId,omitempty"`
 
+	// IsFavorite Filter by favorite status
+	IsFavorite *bool `form:"isFavorite,omitempty" json:"isFavorite,omitempty"`
+
+	// IsHidden Filter by hidden status
+	IsHidden *bool `form:"isHidden,omitempty" json:"isHidden,omitempty"`
+
+	// Name Filter by person name
+	Name *string `form:"name,omitempty" json:"name,omitempty"`
+
 	// Page Page number for pagination
 	Page *int `form:"page,omitempty" json:"page,omitempty"`
+
+	// SharedById Only include people to which the user gave access
+	SharedById *openapi_types.UUID `form:"sharedById,omitempty" json:"sharedById,omitempty"`
+
+	// SharedWithId Only include people to which the user was given access
+	SharedWithId *openapi_types.UUID `form:"sharedWithId,omitempty" json:"sharedWithId,omitempty"`
 
 	// Size Number of items per page
 	Size *int `form:"size,omitempty" json:"size,omitempty"`
 
 	// WithHidden Include hidden people
 	WithHidden *bool `form:"withHidden,omitempty" json:"withHidden,omitempty"`
+}
+
+// GetUsersForPeopleParams defines parameters for GetUsersForPeople.
+type GetUsersForPeopleParams struct {
+	Direction *SharingDirection `form:"direction,omitempty" json:"direction,omitempty"`
+
+	// PersonId Person ID
+	PersonId *openapi_types.UUID `form:"personId,omitempty" json:"personId,omitempty"`
+
+	// Role Role of user
+	Role *PersonUserRole `form:"role,omitempty" json:"role,omitempty"`
+
+	// SharedById User ID of the user that gave access
+	SharedById *openapi_types.UUID `form:"sharedById,omitempty" json:"sharedById,omitempty"`
+
+	// SharedWithId User ID of the user that was given access
+	SharedWithId *openapi_types.UUID `form:"sharedWithId,omitempty" json:"sharedWithId,omitempty"`
 }
 
 // SearchPluginsParams defines parameters for SearchPlugins.
@@ -8525,7 +8777,7 @@ type CreatePartnerJSONRequestBody = PartnerCreateDto
 type UpdatePartnerJSONRequestBody = PartnerUpdateDto
 
 // DeletePeopleJSONRequestBody defines body for DeletePeople for application/json ContentType.
-type DeletePeopleJSONRequestBody = BulkIdsDto
+type DeletePeopleJSONRequestBody = PeopleDeleteDto
 
 // CreatePersonJSONRequestBody defines body for CreatePerson for application/json ContentType.
 type CreatePersonJSONRequestBody = PersonCreateDto
@@ -8535,6 +8787,15 @@ type UpdatePeopleJSONRequestBody = PeopleUpdateDto
 
 // MergePeopleJSONRequestBody defines body for MergePeople for application/json ContentType.
 type MergePeopleJSONRequestBody = MergePersonDto
+
+// RemoveUsersFromPeopleJSONRequestBody defines body for RemoveUsersFromPeople for application/json ContentType.
+type RemoveUsersFromPeopleJSONRequestBody = PersonUsersDeleteDto
+
+// UpsertPeopleUsersJSONRequestBody defines body for UpsertPeopleUsers for application/json ContentType.
+type UpsertPeopleUsersJSONRequestBody = PeopleUsersUpsertDto
+
+// DeletePersonJSONRequestBody defines body for DeletePerson for application/json ContentType.
+type DeletePersonJSONRequestBody = PersonDeleteDto
 
 // UpdatePersonJSONRequestBody defines body for UpdatePerson for application/json ContentType.
 //
@@ -10829,12 +11090,66 @@ type ClientInterface interface {
 	// Corresponds with POST /people/merge (the `MergePeople` operationId).
 	MergePeople(ctx context.Context, body MergePeopleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// RemoveUsersFromPeopleWithBody Remove users from people
+	//
+	// Remove user access to people.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with DELETE /people/users (the `RemoveUsersFromPeople` operationId).
+	RemoveUsersFromPeopleWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RemoveUsersFromPeople Remove users from people
+	//
+	// Remove user access to people.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with DELETE /people/users (the `RemoveUsersFromPeople` operationId).
+	RemoveUsersFromPeople(ctx context.Context, body RemoveUsersFromPeopleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetUsersForPeople Get people access
+	//
+	// Retrieve a list of users and the people to which they have been given access.
+	//
+	// Corresponds with GET /people/users (the `GetUsersForPeople` operationId).
+	GetUsersForPeople(ctx context.Context, params *GetUsersForPeopleParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpsertPeopleUsersWithBody Upsert user access
+	//
+	// Give users access to people.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /people/users (the `UpsertPeopleUsers` operationId).
+	UpsertPeopleUsersWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpsertPeopleUsers Upsert user access
+	//
+	// Give users access to people.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /people/users (the `UpsertPeopleUsers` operationId).
+	UpsertPeopleUsers(ctx context.Context, body UpsertPeopleUsersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeletePersonWithBody Delete person
+	//
+	// Delete an individual person.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with DELETE /people/{id} (the `DeletePerson` operationId).
+	DeletePersonWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// DeletePerson Delete person
 	//
 	// Delete an individual person.
 	//
+	// Takes a body of the `application/json` content type.
+	//
 	// Corresponds with DELETE /people/{id} (the `DeletePerson` operationId).
-	DeletePerson(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+	DeletePerson(ctx context.Context, id openapi_types.UUID, body DeletePersonJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetPerson Get a person
 	//
@@ -16278,13 +16593,127 @@ func (c *Client) MergePeople(ctx context.Context, body MergePeopleJSONRequestBod
 	return c.Client.Do(req)
 }
 
+// RemoveUsersFromPeopleWithBody Remove users from people
+//
+// Remove user access to people.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with DELETE /people/users (the `RemoveUsersFromPeople` operationId).
+func (c *Client) RemoveUsersFromPeopleWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveUsersFromPeopleRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RemoveUsersFromPeople Remove users from people
+//
+// Remove user access to people.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with DELETE /people/users (the `RemoveUsersFromPeople` operationId).
+func (c *Client) RemoveUsersFromPeople(ctx context.Context, body RemoveUsersFromPeopleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveUsersFromPeopleRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetUsersForPeople Get people access
+//
+// Retrieve a list of users and the people to which they have been given access.
+//
+// Corresponds with GET /people/users (the `GetUsersForPeople` operationId).
+func (c *Client) GetUsersForPeople(ctx context.Context, params *GetUsersForPeopleParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetUsersForPeopleRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpsertPeopleUsersWithBody Upsert user access
+//
+// Give users access to people.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /people/users (the `UpsertPeopleUsers` operationId).
+func (c *Client) UpsertPeopleUsersWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpsertPeopleUsersRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpsertPeopleUsers Upsert user access
+//
+// Give users access to people.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /people/users (the `UpsertPeopleUsers` operationId).
+func (c *Client) UpsertPeopleUsers(ctx context.Context, body UpsertPeopleUsersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpsertPeopleUsersRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeletePersonWithBody Delete person
+//
+// Delete an individual person.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with DELETE /people/{id} (the `DeletePerson` operationId).
+func (c *Client) DeletePersonWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeletePersonRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // DeletePerson Delete person
 //
 // Delete an individual person.
 //
+// Takes a body of the `application/json` content type.
+//
 // Corresponds with DELETE /people/{id} (the `DeletePerson` operationId).
-func (c *Client) DeletePerson(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeletePersonRequest(c.Server, id)
+func (c *Client) DeletePerson(ctx context.Context, id openapi_types.UUID, body DeletePersonJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeletePersonRequest(c.Server, id, body)
 	if err != nil {
 		return nil, err
 	}
@@ -26340,9 +26769,69 @@ func NewGetAllPeopleRequest(server string, params *GetAllPeopleParams) (*http.Re
 
 		}
 
+		if params.IsFavorite != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "isFavorite", *params.IsFavorite, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IsHidden != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "isHidden", *params.IsHidden, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Name != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "name", *params.Name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.Page != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.SharedById != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sharedById", *params.SharedById, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.SharedWithId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sharedWithId", *params.SharedWithId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -26510,8 +26999,201 @@ func NewMergePeopleRequestWithBody(server string, contentType string, body io.Re
 	return req, nil
 }
 
-// NewDeletePersonRequest constructs an http.Request for the DeletePerson method
-func NewDeletePersonRequest(server string, id openapi_types.UUID) (*http.Request, error) {
+// NewRemoveUsersFromPeopleRequest calls the generic RemoveUsersFromPeople builder with application/json body
+func NewRemoveUsersFromPeopleRequest(server string, body RemoveUsersFromPeopleJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRemoveUsersFromPeopleRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewRemoveUsersFromPeopleRequestWithBody constructs an http.Request for the RemoveUsersFromPeople method, with any body, and a specified content type
+func NewRemoveUsersFromPeopleRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/people/users")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetUsersForPeopleRequest constructs an http.Request for the GetUsersForPeople method
+func NewGetUsersForPeopleRequest(server string, params *GetUsersForPeopleParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/people/users")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Direction != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "direction", *params.Direction, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PersonId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "personId", *params.PersonId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Role != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "role", *params.Role, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.SharedById != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sharedById", *params.SharedById, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.SharedWithId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sharedWithId", *params.SharedWithId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpsertPeopleUsersRequest calls the generic UpsertPeopleUsers builder with application/json body
+func NewUpsertPeopleUsersRequest(server string, body UpsertPeopleUsersJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpsertPeopleUsersRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewUpsertPeopleUsersRequestWithBody constructs an http.Request for the UpsertPeopleUsers method, with any body, and a specified content type
+func NewUpsertPeopleUsersRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/people/users")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeletePersonRequest calls the generic DeletePerson builder with application/json body
+func NewDeletePersonRequest(server string, id openapi_types.UUID, body DeletePersonJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDeletePersonRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewDeletePersonRequestWithBody constructs an http.Request for the DeletePerson method, with any body, and a specified content type
+func NewDeletePersonRequestWithBody(server string, id openapi_types.UUID, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -26536,10 +27218,12 @@ func NewDeletePersonRequest(server string, id openapi_types.UUID) (*http.Request
 		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -34099,14 +34783,68 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /people/merge (the `MergePeople` operationId).
 	MergePeopleWithResponse(ctx context.Context, body MergePeopleJSONRequestBody, reqEditors ...RequestEditorFn) (*MergePeopleResponse, error)
 
+	// RemoveUsersFromPeopleWithBodyWithResponse Remove users from people
+	//
+	// Remove user access to people.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /people/users (the `RemoveUsersFromPeople` operationId).
+	RemoveUsersFromPeopleWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RemoveUsersFromPeopleResponse, error)
+
+	// RemoveUsersFromPeopleWithResponse Remove users from people
+	//
+	// Remove user access to people.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /people/users (the `RemoveUsersFromPeople` operationId).
+	RemoveUsersFromPeopleWithResponse(ctx context.Context, body RemoveUsersFromPeopleJSONRequestBody, reqEditors ...RequestEditorFn) (*RemoveUsersFromPeopleResponse, error)
+
+	// GetUsersForPeopleWithResponse Get people access
+	//
+	// Retrieve a list of users and the people to which they have been given access.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /people/users (the `GetUsersForPeople` operationId).
+	GetUsersForPeopleWithResponse(ctx context.Context, params *GetUsersForPeopleParams, reqEditors ...RequestEditorFn) (*GetUsersForPeopleResponse, error)
+
+	// UpsertPeopleUsersWithBodyWithResponse Upsert user access
+	//
+	// Give users access to people.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /people/users (the `UpsertPeopleUsers` operationId).
+	UpsertPeopleUsersWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpsertPeopleUsersResponse, error)
+
+	// UpsertPeopleUsersWithResponse Upsert user access
+	//
+	// Give users access to people.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /people/users (the `UpsertPeopleUsers` operationId).
+	UpsertPeopleUsersWithResponse(ctx context.Context, body UpsertPeopleUsersJSONRequestBody, reqEditors ...RequestEditorFn) (*UpsertPeopleUsersResponse, error)
+
+	// DeletePersonWithBodyWithResponse Delete person
+	//
+	// Delete an individual person.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /people/{id} (the `DeletePerson` operationId).
+	DeletePersonWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeletePersonResponse, error)
+
 	// DeletePersonWithResponse Delete person
 	//
 	// Delete an individual person.
 	//
-	// Returns a wrapper object for the known response body format(s).
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with DELETE /people/{id} (the `DeletePerson` operationId).
-	DeletePersonWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeletePersonResponse, error)
+	DeletePersonWithResponse(ctx context.Context, id openapi_types.UUID, body DeletePersonJSONRequestBody, reqEditors ...RequestEditorFn) (*DeletePersonResponse, error)
 
 	// GetPersonWithResponse Get a person
 	//
@@ -41708,6 +42446,115 @@ func (r MergePeopleResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r MergePeopleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RemoveUsersFromPeopleResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// GetBody returns the raw response body bytes
+func (r RemoveUsersFromPeopleResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RemoveUsersFromPeopleResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RemoveUsersFromPeopleResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RemoveUsersFromPeopleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetUsersForPeopleResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PersonUsersResponseDto
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetUsersForPeopleResponse) GetJSON200() *PersonUsersResponseDto {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetUsersForPeopleResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetUsersForPeopleResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetUsersForPeopleResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetUsersForPeopleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpsertPeopleUsersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// GetBody returns the raw response body bytes
+func (r UpsertPeopleUsersResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpsertPeopleUsersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpsertPeopleUsersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpsertPeopleUsersResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -49771,15 +50618,105 @@ func (c *ClientWithResponses) MergePeopleWithResponse(ctx context.Context, body 
 	return ParseMergePeopleResponse(rsp)
 }
 
+// RemoveUsersFromPeopleWithBodyWithResponse Remove users from people
+//
+// Remove user access to people.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /people/users (the `RemoveUsersFromPeople` operationId).
+func (c *ClientWithResponses) RemoveUsersFromPeopleWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RemoveUsersFromPeopleResponse, error) {
+	rsp, err := c.RemoveUsersFromPeopleWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveUsersFromPeopleResponse(rsp)
+}
+
+// RemoveUsersFromPeopleWithResponse Remove users from people
+//
+// Remove user access to people.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /people/users (the `RemoveUsersFromPeople` operationId).
+func (c *ClientWithResponses) RemoveUsersFromPeopleWithResponse(ctx context.Context, body RemoveUsersFromPeopleJSONRequestBody, reqEditors ...RequestEditorFn) (*RemoveUsersFromPeopleResponse, error) {
+	rsp, err := c.RemoveUsersFromPeople(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveUsersFromPeopleResponse(rsp)
+}
+
+// GetUsersForPeopleWithResponse Get people access
+//
+// Retrieve a list of users and the people to which they have been given access.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /people/users (the `GetUsersForPeople` operationId).
+func (c *ClientWithResponses) GetUsersForPeopleWithResponse(ctx context.Context, params *GetUsersForPeopleParams, reqEditors ...RequestEditorFn) (*GetUsersForPeopleResponse, error) {
+	rsp, err := c.GetUsersForPeople(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetUsersForPeopleResponse(rsp)
+}
+
+// UpsertPeopleUsersWithBodyWithResponse Upsert user access
+//
+// Give users access to people.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /people/users (the `UpsertPeopleUsers` operationId).
+func (c *ClientWithResponses) UpsertPeopleUsersWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpsertPeopleUsersResponse, error) {
+	rsp, err := c.UpsertPeopleUsersWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpsertPeopleUsersResponse(rsp)
+}
+
+// UpsertPeopleUsersWithResponse Upsert user access
+//
+// Give users access to people.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /people/users (the `UpsertPeopleUsers` operationId).
+func (c *ClientWithResponses) UpsertPeopleUsersWithResponse(ctx context.Context, body UpsertPeopleUsersJSONRequestBody, reqEditors ...RequestEditorFn) (*UpsertPeopleUsersResponse, error) {
+	rsp, err := c.UpsertPeopleUsers(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpsertPeopleUsersResponse(rsp)
+}
+
+// DeletePersonWithBodyWithResponse Delete person
+//
+// Delete an individual person.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /people/{id} (the `DeletePerson` operationId).
+func (c *ClientWithResponses) DeletePersonWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeletePersonResponse, error) {
+	rsp, err := c.DeletePersonWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeletePersonResponse(rsp)
+}
+
 // DeletePersonWithResponse Delete person
 //
 // Delete an individual person.
 //
-// Returns a wrapper object for the known response body format(s).
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with DELETE /people/{id} (the `DeletePerson` operationId).
-func (c *ClientWithResponses) DeletePersonWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeletePersonResponse, error) {
-	rsp, err := c.DeletePerson(ctx, id, reqEditors...)
+func (c *ClientWithResponses) DeletePersonWithResponse(ctx context.Context, id openapi_types.UUID, body DeletePersonJSONRequestBody, reqEditors ...RequestEditorFn) (*DeletePersonResponse, error) {
+	rsp, err := c.DeletePerson(ctx, id, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -55730,6 +56667,64 @@ func ParseMergePeopleResponse(rsp *http.Response) (*MergePeopleResponse, error) 
 		}
 		response.JSON200 = &dest
 
+	}
+
+	return response, nil
+}
+
+// ParseRemoveUsersFromPeopleResponse parses an HTTP response from a RemoveUsersFromPeopleWithResponse call
+func ParseRemoveUsersFromPeopleResponse(rsp *http.Response) (*RemoveUsersFromPeopleResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RemoveUsersFromPeopleResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseGetUsersForPeopleResponse parses an HTTP response from a GetUsersForPeopleWithResponse call
+func ParseGetUsersForPeopleResponse(rsp *http.Response) (*GetUsersForPeopleResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetUsersForPeopleResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PersonUsersResponseDto
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpsertPeopleUsersResponse parses an HTTP response from a UpsertPeopleUsersWithResponse call
+func ParseUpsertPeopleUsersResponse(rsp *http.Response) (*UpsertPeopleUsersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpsertPeopleUsersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
 	}
 
 	return response, nil
