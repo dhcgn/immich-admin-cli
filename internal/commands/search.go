@@ -26,83 +26,7 @@ func Search() *cli.Command {
 				Usage: "Search assets by metadata criteria (POST /search/metadata)",
 				Description: "Search for assets using metadata filters such as file name, type, camera, location, and date ranges. " +
 					"Results are paginated; use --all to fetch every page automatically. Trashed assets are excluded.",
-				Flags: []cli.Flag{
-					// --- file / name ---
-					&cli.StringFlag{
-						Name:    "original-file-name",
-						Aliases: []string{"n"},
-						Usage:   "filter by original file name (substring match)",
-					},
-					&cli.StringFlag{
-						Name:  "original-path",
-						Usage: "filter by original file path",
-					},
-					// --- asset type ---
-					&cli.StringFlag{
-						Name:  "type",
-						Usage: "filter by asset type: IMAGE, VIDEO, AUDIO, OTHER",
-					},
-					// --- boolean filters ---
-					&cli.StringFlag{
-						Name:  "is-favorite",
-						Usage: "filter favorites: true or false",
-					},
-					&cli.StringFlag{
-						Name:  "is-not-in-album",
-						Usage: "filter assets not in any album: true or false",
-					},
-					&cli.StringFlag{
-						Name:  "is-offline",
-						Usage: "filter offline assets: true or false",
-					},
-					&cli.StringFlag{
-						Name:  "is-motion",
-						Usage: "filter motion photos: true or false",
-					},
-					// --- location ---
-					&cli.StringFlag{
-						Name:  "city",
-						Usage: "filter by city name",
-					},
-					&cli.StringFlag{
-						Name:  "country",
-						Usage: "filter by country name",
-					},
-					&cli.StringFlag{
-						Name:  "state",
-						Usage: "filter by state/province name",
-					},
-					// --- camera ---
-					&cli.StringFlag{
-						Name:  "make",
-						Usage: "filter by camera make",
-					},
-					&cli.StringFlag{
-						Name:  "model",
-						Usage: "filter by camera model",
-					},
-					&cli.StringFlag{
-						Name:  "lens-model",
-						Usage: "filter by lens model",
-					},
-					// --- dates ---
-					&cli.StringFlag{
-						Name:  "taken-after",
-						Usage: "filter by taken date after (RFC3339, e.g. 2024-01-01T00:00:00Z)",
-					},
-					&cli.StringFlag{
-						Name:  "taken-before",
-						Usage: "filter by taken date before (RFC3339, e.g. 2024-12-31T23:59:59Z)",
-					},
-					// --- OCR / description ---
-					&cli.StringFlag{
-						Name:  "ocr",
-						Usage: "filter by OCR text recognized in the image (fuzzy word match, e.g. a year printed on a scan)",
-					},
-					&cli.StringFlag{
-						Name:  "description",
-						Usage: "filter by description text (substring match)",
-					},
+				Flags: append(searchFilterFlags(),
 					// --- order ---
 					&cli.StringFlag{
 						Name:  "order",
@@ -129,7 +53,7 @@ func Search() *cli.Command {
 						Aliases: []string{"q"},
 						Usage:   "print only asset IDs, one per line (useful for piping to other commands)",
 					},
-				},
+				),
 				Action: searchMetadata,
 			},
 		},
@@ -205,6 +129,24 @@ func searchMetadata(ctx context.Context, cmd *cli.Command) error {
 // the structured shape (filter/orderBy/cursor, v3.2+): the flat fields are
 // deprecated and the server rejects mixing the two shapes (400).
 func buildMetadataSearchDto(cmd *cli.Command) (*immichapi.SearchAssetsJSONRequestBody, error) {
+	f, err := buildSearchFilter(cmd)
+	if err != nil {
+		return nil, err
+	}
+	o := immichapi.AssetOrder(cmd.String("order"))
+	if o != immichapi.AssetOrderAsc && o != immichapi.AssetOrderDesc {
+		return nil, fmt.Errorf("invalid --order %q: must be asc or desc", o)
+	}
+	size := int(cmd.Int("page-size"))
+	return &immichapi.MetadataSearchDto{
+		Filter:  f,
+		OrderBy: &immichapi.SearchOrder{Direction: &o}, // Field nil = server default sort field
+		Size:    &size,
+	}, nil
+}
+
+// buildSearchFilter maps the searchFilterFlags to the structured search filter.
+func buildSearchFilter(cmd *cli.Command) (*immichapi.SearchFilter, error) {
 	f := immichapi.SearchFilter{}
 	str := func(name string) *string {
 		if v := cmd.String(name); v != "" {
@@ -270,17 +212,7 @@ func buildMetadataSearchDto(cmd *cli.Command) (*immichapi.SearchAssetsJSONReques
 	if err := setBoolFlag(cmd, "is-motion", func(b bool) { f.IsMotion = boolFilter(b) }); err != nil {
 		return nil, err
 	}
-
-	o := immichapi.AssetOrder(cmd.String("order"))
-	if o != immichapi.AssetOrderAsc && o != immichapi.AssetOrderDesc {
-		return nil, fmt.Errorf("invalid --order %q: must be asc or desc", o)
-	}
-	size := int(cmd.Int("page-size"))
-	return &immichapi.MetadataSearchDto{
-		Filter:  &f,
-		OrderBy: &immichapi.SearchOrder{Direction: &o}, // Field nil = server default sort field
-		Size:    &size,
-	}, nil
+	return &f, nil
 }
 
 func ensureDate(p **immichapi.DateFilter) *immichapi.DateFilter {
@@ -302,4 +234,88 @@ func setBoolFlag(cmd *cli.Command, name string, set func(bool)) error {
 	}
 	set(b)
 	return nil
+}
+
+// searchFilterFlags are the metadata filter flags shared by `search metadata`
+// and the client workflows that select assets by search (tz-audit, tz-set);
+// buildSearchFilter maps them to the request filter.
+func searchFilterFlags() []cli.Flag {
+	return []cli.Flag{
+		// --- file / name ---
+		&cli.StringFlag{
+			Name:    "original-file-name",
+			Aliases: []string{"n"},
+			Usage:   "filter by original file name (substring match)",
+		},
+		&cli.StringFlag{
+			Name:  "original-path",
+			Usage: "filter by original file path",
+		},
+		// --- asset type ---
+		&cli.StringFlag{
+			Name:  "type",
+			Usage: "filter by asset type: IMAGE, VIDEO, AUDIO, OTHER",
+		},
+		// --- boolean filters ---
+		&cli.StringFlag{
+			Name:  "is-favorite",
+			Usage: "filter favorites: true or false",
+		},
+		&cli.StringFlag{
+			Name:  "is-not-in-album",
+			Usage: "filter assets not in any album: true or false",
+		},
+		&cli.StringFlag{
+			Name:  "is-offline",
+			Usage: "filter offline assets: true or false",
+		},
+		&cli.StringFlag{
+			Name:  "is-motion",
+			Usage: "filter motion photos: true or false",
+		},
+		// --- location ---
+		&cli.StringFlag{
+			Name:  "city",
+			Usage: "filter by city name",
+		},
+		&cli.StringFlag{
+			Name:  "country",
+			Usage: "filter by country name",
+		},
+		&cli.StringFlag{
+			Name:  "state",
+			Usage: "filter by state/province name",
+		},
+		// --- camera ---
+		&cli.StringFlag{
+			Name:  "make",
+			Usage: "filter by camera make",
+		},
+		&cli.StringFlag{
+			Name:  "model",
+			Usage: "filter by camera model",
+		},
+		&cli.StringFlag{
+			Name:  "lens-model",
+			Usage: "filter by lens model",
+		},
+		// --- dates ---
+		&cli.StringFlag{
+			Name:  "taken-after",
+			Usage: "filter by taken date after (RFC3339, e.g. 2024-01-01T00:00:00Z)",
+		},
+		&cli.StringFlag{
+			Name:  "taken-before",
+			Usage: "filter by taken date before (RFC3339, e.g. 2024-12-31T23:59:59Z)",
+		},
+		// --- OCR / description ---
+		&cli.StringFlag{
+			Name:  "ocr",
+			Usage: "filter by OCR text recognized in the image (fuzzy word match, e.g. a year printed on a scan)",
+		},
+		&cli.StringFlag{
+			Name:  "description",
+			Usage: "filter by description text (substring match)",
+		},
+	}
 }

@@ -234,8 +234,7 @@ func AlbumsForAsset(ctx context.Context, c *client.Client, id openapi_types.UUID
 }
 
 // SetAssetsYear sets every asset's capture date to OCRTargetDate(year) via
-// updateAsset (the documented deprecated-endpoint exception, see
-// FixAlbumDates), then tags the successfully changed assets with tag.
+// updateAsset, then tags the successfully changed assets with tag.
 // Continue-on-error; dry-run only prints.
 func SetAssetsYear(ctx context.Context, c *client.Client, assets []immichapi.AssetResponseDto, year int, tag string, dryRun bool) error {
 	if len(assets) == 0 {

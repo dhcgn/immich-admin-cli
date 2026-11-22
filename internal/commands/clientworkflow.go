@@ -42,6 +42,8 @@ func ClientWorkflow() *cli.Command {
 			repairAssetsCommand(),
 			fixAlbumDatesCommand(),
 			dateFromOCRCommand(),
+			tzAuditCommand(),
+			tzSetCommand(),
 			downloadAlbumCommand(),
 			mergeAlbumCommand(),
 			findSimilarCommand(),
@@ -486,9 +488,7 @@ func fixAlbumDatesCommand() *cli.Command {
 			"outside the range implied by the name. For exact-day albums, offers to fix mismatches by setting the " +
 			"asset's date to the album's date (keeping the original time of day). Year-only albums have no single " +
 			"unambiguous date to fix to, so their mismatches are reported only, never changed.\n" +
-			"This is the one deliberate exception to this project's rule against deprecated endpoints: fixing " +
-			"uses PUT /assets/{id} (updateAsset), the only Immich API that can set an asset's capture date, which " +
-			"upstream marks deprecated with no working replacement.",
+			"Fixing uses PUT /assets/{id} (updateAsset).",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:  "dry-run",
@@ -539,8 +539,6 @@ func clientWorkflowFixAlbumDates(ctx context.Context, cmd *cli.Command) error {
 		fmt.Println("Nothing to fix.")
 		return nil
 	}
-
-	fmt.Println("Note: fixing uses the deprecated PUT /assets/{id} endpoint — Immich has not shipped a replacement for setting an asset's capture date.")
 
 	// --interactive shows, confirms, and applies one album at a time (rather
 	// than batching every fix to the end) so a prompt never refers back to

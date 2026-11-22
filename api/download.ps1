@@ -1,4 +1,4 @@
-$version = "v3.3.5"
+$version = "v3.4.2"
 $url =  "https://raw.githubusercontent.com/immich-app/immich/refs/tags/$version/open-api/immich-openapi-specs.json"
 $outFile = Join-Path -Path $PSScriptRoot -ChildPath "immich-openapi-specs.json"
 Invoke-WebRequest -Uri $url -OutFile $outFile

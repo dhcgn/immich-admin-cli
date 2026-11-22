@@ -23,7 +23,7 @@ Args: `[ASSET_ID ...]`
 
 ### assets update
 
-⚠ DEPRECATED upstream: update one or more assets (PUT /assets/{id})
+Update one or more assets (PUT /assets/{id}); --date-time-original with an offset also sets the time zone
 Args: `[ASSET_ID ...]`
 - `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
 - `--date-time-original` (string): set the asset's original date and time
@@ -371,6 +371,58 @@ Args: `[ASSET_ID|ASSET_URL ...]`
 - `--yes` (bool): apply the unambiguous single-asset changes without asking (never whole albums)
 - `--json` (bool): print the report as JSON (report only; not with --yes/--interactive)
 
+### client-workflow tz-audit
+
+Report the time zone classes of assets (none, utc, offset, iana, dst-mismatch, iana-inconsistent); read-only
+- `--original-file-name, -n` (string): filter by original file name (substring match)
+- `--original-path` (string): filter by original file path
+- `--type` (string): filter by asset type: IMAGE, VIDEO, AUDIO, OTHER
+- `--is-favorite` (string): filter favorites: true or false
+- `--is-not-in-album` (string): filter assets not in any album: true or false
+- `--is-offline` (string): filter offline assets: true or false
+- `--is-motion` (string): filter motion photos: true or false
+- `--city` (string): filter by city name
+- `--country` (string): filter by country name
+- `--state` (string): filter by state/province name
+- `--make` (string): filter by camera make
+- `--model` (string): filter by camera model
+- `--lens-model` (string): filter by lens model
+- `--taken-after` (string): filter by taken date after (RFC3339, e.g. 2024-01-01T00:00:00Z)
+- `--taken-before` (string): filter by taken date before (RFC3339, e.g. 2024-12-31T23:59:59Z)
+- `--ocr` (string): filter by OCR text recognized in the image (fuzzy word match, e.g. a year printed on a scan)
+- `--description` (string): filter by description text (substring match)
+- `--reference-zone` (string): IANA `ZONE` (e.g. Europe/Berlin) enabling the dst-mismatch class
+- `--class` (string): list the assets of this class `NAME`: none, utc, offset, iana, dst-mismatch, iana-inconsistent
+- `--top` (int): number of cameras shown per class in the summary [default: 5]
+- `--ids-only, -q` (bool): with --class: print only asset IDs, one per line
+- `--json` (bool): print the summary (and with --class the matching assets) as JSON
+
+### client-workflow tz-set
+
+Give assets without any time zone an IANA zone's offset, keeping the wall-clock time they show
+Args: `[ASSET_ID|ASSET_URL ...]`
+- `--original-file-name, -n` (string): filter by original file name (substring match)
+- `--original-path` (string): filter by original file path
+- `--type` (string): filter by asset type: IMAGE, VIDEO, AUDIO, OTHER
+- `--is-favorite` (string): filter favorites: true or false
+- `--is-not-in-album` (string): filter assets not in any album: true or false
+- `--is-offline` (string): filter offline assets: true or false
+- `--is-motion` (string): filter motion photos: true or false
+- `--city` (string): filter by city name
+- `--country` (string): filter by country name
+- `--state` (string): filter by state/province name
+- `--make` (string): filter by camera make
+- `--model` (string): filter by camera model
+- `--lens-model` (string): filter by lens model
+- `--taken-after` (string): filter by taken date after (RFC3339, e.g. 2024-01-01T00:00:00Z)
+- `--taken-before` (string): filter by taken date before (RFC3339, e.g. 2024-12-31T23:59:59Z)
+- `--ocr` (string): filter by OCR text recognized in the image (fuzzy word match, e.g. a year printed on a scan)
+- `--description` (string): filter by description text (substring match)
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
+- `--time-zone` (string): IANA `ZONE` to apply, e.g. Europe/Berlin (fixed offsets like UTC+1 are rejected) [required]
+- `--dry-run` (bool): print the planned changes without calling the API
+- `--yes` (bool): skip the confirmation prompt (required when IDs come from stdin)
+
 ### client-workflow download-album
 
 Download all original files or a smaller variant (preview/thumbnail/fullsize) from one album into a local folder, optionally kept in sync
@@ -610,6 +662,16 @@ albums separate, or rename instead of merging blindly. Always run
   old → new date and asks again; those assets get `immich-admin-cli/date-from-ocr-album`; `[n]` skips the rest
   of an album. Agents should
   run the report, show it to the user, and leave `--interactive` to them.
+- **Time zones**: `client-workflow tz-audit [search filters] [--reference-zone Europe/Berlin]`
+  (read-only) counts assets per class — `none` (no zone at all), `utc` (EXIF without offset),
+  `offset` (`UTC+2`), `iana` (`Europe/Berlin`), `dst-mismatch` (camera not switched for DST; needs
+  `--reference-zone`, add `--country Germany` to avoid hits abroad), `iana-inconsistent` — with the top
+  cameras per class; `--class none [-q|--json]` lists one class. `client-workflow tz-set --time-zone
+  Europe/Berlin` gives only `none` assets the zone's DST-correct offset while keeping the shown wall-clock
+  time (never touches assets that already have a zone; IANA names only). Typical: `cw tz-audit --class
+  none --make Canon -q | cw tz-set --time-zone Europe/Berlin --ids-file - --dry-run`, then rerun with
+  `--yes` (required with stdin IDs). Immich stores the result as `UTC+1`/`UTC+2`, not the IANA name.
+  `none` assets have no GPS, so only the user knows the right zone — ask, never guess.
 - **Tags**: `tags upsert`, `tags bulk-tag`, `tags tag` for assignment;
   `client-workflow tag-delete --include/--exclude` for regex bulk deletion
   (permanent — dry-run first).
