@@ -18,6 +18,7 @@ Run destructive workflows with `--dry-run` first. Workflows show their planned a
 | `cw find-no-thumbhash` | Find assets for which Immich has no thumbnail hash |
 | `cw repair-assets` | Repair supported JPEG/TIFF defects or delete confirmed Google Takeout JSON sidecars |
 | `cw fix-album-dates` | Check date-named albums and optionally correct exact-day capture dates |
+| `cw date-from-ocr` | Set capture years from a year printed in the image (OCR), per asset or interactively per album |
 | `cw download-album` | Export or synchronize an album to a local folder |
 | `cw find-similar` | Find visually similar Immich assets for a local image through immich-clip-probe |
 | `cw merge-album` | Merge album contents and metadata |
@@ -109,6 +110,26 @@ immich-admin cw fix-album-dates --interactive
 ```
 
 Without `--interactive`, one confirmation applies to every reported asset. Use `--yes` only when that bulk behavior is intended.
+
+## Set Capture Years from OCR
+
+`date-from-ocr` is for scanned or re-photographed prints whose real year is printed in the image. It reads Immich's OCR boxes (`assets ocr`) and finds standalone 4-digit years. An asset with exactly one year that differs from its capture year is a `change` candidate: its date becomes `YYYY-06-01 00:00` (mid-year) and it is tagged `immich-admin-cli/date-from-ocr`. Several distinct years are `ambiguous` and never changed automatically. Every hit is printed with its web link; asset links are accepted as input too.
+
+```sh
+# Report only (default): status, OCR text, old -> new date, link
+immich-admin cw date-from-ocr --album-name "Scans 1980er"
+
+# Apply only the unambiguous single-asset changes
+immich-admin cw date-from-ocr --album-name "Scans 1980er" --yes
+
+# Review hits grouped by album (terminal required)
+immich-admin cw date-from-ocr https://immich.example.com/photos/<id> --interactive
+
+# Whole library: one OCR search per year, then review (skips assets whose year already matches)
+immich-admin cw date-from-ocr --all --interactive
+```
+
+`--interactive` offers `[s]kip`, `[t]his -> YYYY`, `[a]lbum -> YYYY`, `[n]ext album` (skip the rest of this album), `[y]ear...` (type another year), `[o]pen` (browser) and `[q]uit`. `[a]lbum` lists every asset of the album with its current and new date and asks again (default No); assets that are already in that year are kept, and the propagated ones are tagged `immich-admin-cli/date-from-ocr-album`. `--all` finds many numbers that are not dates (e.g. "seit 1938", "2000 qm"), so it is refused together with `--yes`; review the `--all --json` report or use `--all --interactive`. Album-wide changes are not available outside `--interactive`. Like `fix-album-dates`, this uses the deprecated `updateAsset` endpoint.
 
 ## Download or Mirror an Album
 

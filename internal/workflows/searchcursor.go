@@ -32,8 +32,14 @@ func (p *SearchPager) Apply(body *immichapi.MetadataSearchDto) {
 		body.Page = nil
 		return
 	}
-	body.Page = &p.page
 	body.Cursor = nil
+	// The deprecated page field cannot be combined with the structured
+	// shape (filter/orderBy): the server rejects it, so start without it.
+	if body.Filter != nil || body.OrderBy != nil {
+		body.Page = nil
+		return
+	}
+	body.Page = &p.page
 }
 
 // Next advances the pager from a response's asset listing, reporting whether

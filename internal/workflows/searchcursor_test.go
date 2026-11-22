@@ -69,3 +69,22 @@ func derefOrNil(s *string) string {
 	}
 	return *s
 }
+
+// With the structured shape (filter/orderBy) the deprecated page field must
+// never be sent — the server rejects the combination.
+func TestSearchPagerStructuredShapeNeverSendsPage(t *testing.T) {
+	var p SearchPager
+	body := &immichapi.MetadataSearchDto{Filter: &immichapi.SearchFilter{}}
+
+	p.Apply(body)
+	if body.Page != nil || body.Cursor != nil {
+		t.Fatalf("first Apply = page %v cursor %v, want both nil", body.Page, body.Cursor)
+	}
+	if !p.Next(immichapi.SearchAssetResponseDto{NextCursor: new("abc")}) {
+		t.Fatal("Next with NextCursor: got false, want true")
+	}
+	p.Apply(body)
+	if body.Page != nil || body.Cursor == nil || *body.Cursor != "abc" {
+		t.Fatalf("second Apply = page %v cursor %v, want page nil cursor abc", body.Page, derefOrNil(body.Cursor))
+	}
+}

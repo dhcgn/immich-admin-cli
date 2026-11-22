@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
@@ -128,7 +129,7 @@ func whitespaceNote(name string) string {
 func idsFileFlag() cli.Flag {
 	return &cli.StringFlag{
 		Name:  "ids-file",
-		Usage: "read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)",
+		Usage: "read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)",
 	}
 }
 
@@ -151,13 +152,31 @@ func collectIDs(cmd *cli.Command) ([]openapi_types.UUID, error) {
 
 	ids := make([]openapi_types.UUID, 0, len(raw))
 	for _, s := range raw {
-		id, err := uuid.Parse(s)
+		id, err := parseAssetRef(s)
 		if err != nil {
 			return nil, fmt.Errorf("invalid asset ID %q: %w", s, err)
 		}
 		ids = append(ids, id)
 	}
 	return ids, nil
+}
+
+// uuidInURL matches a UUID anywhere in a string (e.g. an Immich web link).
+var uuidInURL = regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
+
+// parseAssetRef accepts a bare asset UUID or an Immich web link to an asset
+// (e.g. https://immich.example.com/people/<personId>/photos/<assetId>?…):
+// for a link, the last UUID in the path (query string ignored) is the asset.
+func parseAssetRef(s string) (openapi_types.UUID, error) {
+	if !strings.Contains(s, "/") {
+		return uuid.Parse(s)
+	}
+	path, _, _ := strings.Cut(s, "?")
+	m := uuidInURL.FindAllString(path, -1)
+	if len(m) == 0 {
+		return openapi_types.UUID{}, fmt.Errorf("no asset UUID found in link")
+	}
+	return uuid.Parse(m[len(m)-1])
 }
 
 // readIDLines reads one ID per line from path ("-" = stdin). Blank lines and

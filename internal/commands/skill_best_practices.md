@@ -26,7 +26,8 @@
   next command or save it: `search metadata --all -q > ids.txt`.
 - `--ids-file FILE` reads IDs back (one UUID per line, `#`/`//` comments
   and blank lines skipped, `-` means stdin). Positional IDs and
-  `--ids-file` combine.
+  `--ids-file` combine. Immich web links to an asset (e.g.
+  `https://immich.example.com/photos/<id>`) are accepted wherever an asset ID is.
 - Bulk commands continue on per-ID errors and exit non-zero with a
   `N of M failed` summary — inspect stderr, don't assume all-or-nothing.
 
@@ -94,7 +95,9 @@ albums separate, or rename instead of merging blindly. Always run
 - **Search → act**: `search metadata` filters by name, type, favorite,
   album membership, location, camera, dates, OCR (`--all` pages the whole
   library). Useful sets: `--is-not-in-album true` (orphans),
-  `--is-offline true`, `--make/--model`, `--city/--taken-after`.
+  `--is-offline true`, `--make/--model`, `--city/--taken-after`,
+  `--ocr 1986 -q` (scans with that year printed → pipe into `cw date-from-ocr --ids-file -`).
+  Name/path/description match substrings; city/camera fields match exactly; trashed assets are excluded.
 - **Replace**: `client-workflow replace-asset <ASSET_ID> <NEW_FILE>`
   uploads, checksum-verifies, copies metadata (albums, favorite, shared
   links, sidecar, stack), then trashes the original. Aborts on checksum
@@ -111,6 +114,19 @@ albums separate, or rename instead of merging blindly. Always run
   resume); `--size preview` + `--resize`/`--resize-video-preset` for small
   shareable copies. `fix-album-dates` reconciles date-named albums
   (report-only for year albums). `add-users-to-album-with-pattern` bulk-shares.
+- **Dates from OCR** (scanned prints with a visible year): `assets ocr ID|LINK [--json]`
+  shows Immich's OCR boxes. `client-workflow date-from-ocr (--album-id|--album-name|ID|LINK...|--ids-file|--all)
+  [--min-score 0.8]` reports each asset whose OCR contains a 4-digit year, with its web link.
+  `--all` covers the whole library in seconds (one server-side OCR search per year, then OCR check of the
+  hits) but finds many non-date numbers ("seit 1938", "2000 qm"), so it is refused with `--yes`: use it
+  as `--all --json` report (pick IDs → `--ids-file … --yes`) or `--all --interactive`. Statuses:
+  `change` (one year, differs → would become `YYYY-06-01 00:00`), `matches`, `ambiguous` (several years).
+  No flags = report only; `--json` for agents. `--yes` applies only unambiguous single-asset changes
+  (tag `immich-admin-cli/date-from-ocr`), never whole albums. Album-wide changes exist only in
+  `--interactive` (a human at a terminal; refused without one): `[a]lbum` lists every album asset with
+  old → new date and asks again; those assets get `immich-admin-cli/date-from-ocr-album`; `[n]` skips the rest
+  of an album. Agents should
+  run the report, show it to the user, and leave `--interactive` to them.
 - **Tags**: `tags upsert`, `tags bulk-tag`, `tags tag` for assignment;
   `client-workflow tag-delete --include/--exclude` for regex bulk deletion
   (permanent — dry-run first).
