@@ -18,14 +18,14 @@ Asset operations
 
 Show information about one or more assets (GET /assets/{id})
 Args: `[ASSET_ID ...]`
-- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
 - `--json` (bool): print the raw responses as a JSON array
 
 ### assets update
 
 ⚠ DEPRECATED upstream: update one or more assets (PUT /assets/{id})
 Args: `[ASSET_ID ...]`
-- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
 - `--date-time-original` (string): set the asset's original date and time
 - `--description` (string): set the asset description
 - `--is-favorite` (string): mark as favorite: true or false
@@ -39,7 +39,7 @@ Args: `[ASSET_ID ...]`
 
 Download original asset files (GET /assets/{id}/original)
 Args: `[ASSET_ID ...]`
-- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
 - `--out-dir` (string): directory to save downloaded files into (default: current working directory)
 - `--quiet` (bool): disable per-file progress bars on stderr
 
@@ -47,7 +47,7 @@ Args: `[ASSET_ID ...]`
 
 Download thumbnail/preview images for asset files (GET /assets/{id}/thumbnail)
 Args: `[ASSET_ID ...]`
-- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
 - `--out-dir` (string): directory to save downloaded files into (default: current working directory)
 - `--size` (string): media size: fullsize, preview, or thumbnail (see the AssetMediaSize spec enum; 'original' is not accepted here — the spec deprecates size=original on this endpoint, use 'assets download-original' instead) [default: "preview"]
 - `--edited` (bool): return the edited version of the asset if available
@@ -84,7 +84,7 @@ Args: `[FILE|DIR ...]`
 
 Delete one or more assets (DELETE /assets)
 Args: `[ASSET_ID ...]`
-- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
 - `--force` (bool): permanently delete instead of moving to trash
 - `--dry-run` (bool): print the assets that would be deleted without changing anything
 - `--yes` (bool): skip the confirmation prompt before deleting assets
@@ -98,6 +98,13 @@ Args: `SOURCE_ID TARGET_ID`
 - `--shared-links` (string): copy shared links: true or false
 - `--sidecar` (string): copy sidecar file: true or false
 - `--stack` (string): copy stack association: true or false
+
+### assets ocr
+
+Show the OCR text boxes Immich recognized in one or more assets (GET /assets/{id}/ocr)
+Args: `[ASSET_ID|ASSET_URL ...]`
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
+- `--json` (bool): print {assetId: [boxes]} as JSON (text, textScore, boxScore, normalized x1..y4)
 
 ## albums
 
@@ -117,7 +124,7 @@ List albums (GET /albums)
 
 Show one or more albums by ID, including members (GET /albums/{id})
 Args: `[ALBUM_ID ...]`
-- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
 - `--json` (bool): print the raw responses as a JSON array
 
 ### albums assets
@@ -149,7 +156,7 @@ Rename an album (PATCH /albums/{id})
 
 Add assets to an album (PUT /albums/{id}/assets)
 Args: `ALBUM_ID [ASSET_ID ...]`
-- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
 - `--dry-run` (bool): print the assets that would be added without changing anything
 - `--yes` (bool): skip the confirmation prompt before adding assets
 
@@ -157,7 +164,7 @@ Args: `ALBUM_ID [ASSET_ID ...]`
 
 Remove assets from an album (DELETE /albums/{id}/assets)
 Args: `ALBUM_ID [ASSET_ID ...]`
-- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
 - `--dry-run` (bool): print the assets that would be removed without changing anything
 - `--yes` (bool): skip the confirmation prompt before removing assets
 
@@ -171,7 +178,7 @@ Create an album (POST /albums)
 
 Delete one or more albums by ID (DELETE /albums/{id})
 Args: `[ALBUM_ID ...]`
-- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
 - `--force` (bool): also delete albums that still contain assets (otherwise non-empty albums are refused)
 - `--dry-run` (bool): print the albums that would be deleted without changing anything
 - `--yes` (bool): skip the confirmation prompt before deleting albums
@@ -198,8 +205,8 @@ Search assets by metadata criteria (POST /search/metadata)
 - `--lens-model` (string): filter by lens model
 - `--taken-after` (string): filter by taken date after (RFC3339, e.g. 2024-01-01T00:00:00Z)
 - `--taken-before` (string): filter by taken date before (RFC3339, e.g. 2024-12-31T23:59:59Z)
-- `--ocr` (string): filter by OCR text content
-- `--description` (string): filter by description text
+- `--ocr` (string): filter by OCR text recognized in the image (fuzzy word match, e.g. a year printed on a scan)
+- `--description` (string): filter by description text (substring match)
 - `--order` (string): sort order: asc or desc (default: desc) [default: "desc"]
 - `--page-size` (int): number of results per page (max 1000) [default: 100]
 - `--all` (bool): fetch all pages automatically (overrides --page-size limit)
@@ -219,14 +226,14 @@ List all tags (GET /tags)
 
 Show one or more tags by ID (GET /tags/{id})
 Args: `[TAG_ID ...]`
-- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
 - `--json` (bool): print the raw responses as a JSON array
 
 ### tags delete
 
 Delete one or more tags by ID (DELETE /tags/{id})
 Args: `[TAG_ID ...]`
-- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
 - `--dry-run` (bool): print the tags that would be deleted without changing anything
 - `--yes` (bool): skip the confirmation prompt before deleting tags
 
@@ -240,7 +247,7 @@ Args: `[TAG_VALUE ...]`
 
 Add multiple tags to multiple assets in one request (PUT /tags/assets)
 Args: `[ASSET_ID ...]`
-- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
 - `--tag-id` (string): tag `ID` to add (repeatable)
 - `--dry-run` (bool): print what would be tagged without changing anything
 
@@ -248,7 +255,7 @@ Args: `[ASSET_ID ...]`
 
 Add one tag to multiple assets (PUT /tags/{id}/assets)
 Args: `TAG_ID [ASSET_ID ...]`
-- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
 - `--dry-run` (bool): print what would be tagged without changing anything
 
 ## users
@@ -269,7 +276,7 @@ List all users on the server (GET /users)
 
 Show one or more users by ID (GET /users/{id})
 Args: `[USER_ID ...]`
-- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
 - `--json` (bool): print the raw responses as a JSON array
 
 ## client-workflow
@@ -333,7 +340,7 @@ Find HEIC/HEIF assets whose dimensions trigger a known Immich thumbnail-corrupti
 Repair corrupt image assets and re-import them, keeping metadata
 Args: `[ASSET_ID ...]`
 - `--mode` (string): repair mode: all | marker | tiff-tags | takeout-json [default: "all"]
-- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
 - `--check-all-assets` (bool): attempt repair on every IMAGE asset with no thumbhash (cannot be combined with explicit IDs)
 - `--album-id` (string): attempt repair on every IMAGE asset with no thumbhash in this album `UUID` (cannot be combined with explicit IDs or --check-all-assets)
 - `--keep-original` (bool): repair and re-import but keep the original asset instead of removing it
@@ -349,6 +356,20 @@ Check assets in date-named albums against the date implied by the album name, an
 - `--offset-days` (int): allow assets up to this many days before/after the album's date before flagging them (absorbs camera timezone/DST boundary slack) [default: 2]
 - `--interactive, -i` (bool): ask once per album (y/N) instead of one bulk confirmation; --yes overrides this and skips all prompts
 - `--yes` (bool): skip the confirmation prompt(s) before fixing dates
+
+### client-workflow date-from-ocr
+
+Set an asset's capture year from a year Immich's OCR found in the image (e.g. scanned prints)
+Args: `[ASSET_ID|ASSET_URL ...]`
+- `--album-id` (string): scan every asset in this album `UUID`
+- `--album-name` (string): scan every asset in the album with this exact `NAME`
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
+- `--all` (bool): scan the whole library: one server-side OCR search per year (1800–now, trash excluded), then check each hit; report or --interactive only (not with --yes), interactive skips already-matching assets
+- `--min-score` (float): minimum OCR textScore (0–1) for a text box to count [default: 0.8]
+- `--interactive, -i` (bool): review each hit grouped by album: [s]kip [t]his [a]lbum [n]ext album [y]ear [o]pen [q]uit (needs a terminal)
+- `--dry-run` (bool): never change anything (also inside --interactive)
+- `--yes` (bool): apply the unambiguous single-asset changes without asking (never whole albums)
+- `--json` (bool): print the report as JSON (report only; not with --yes/--interactive)
 
 ### client-workflow download-album
 
@@ -441,7 +462,7 @@ List server workflows (GET /workflows)
 
 Show one or more server workflows by ID (GET /workflows/{id})
 Args: `[WORKFLOW_ID ...]`
-- `--ids-file` (string): read IDs from `FILE`, one UUID per line ('-' for stdin; '#' or '//' starts a comment)
+- `--ids-file` (string): read IDs from `FILE`, one UUID (or Immich asset link) per line ('-' for stdin; '#' or '//' starts a comment)
 - `--json` (bool): print the raw responses as a JSON array
 
 ### immich-workflow logs
@@ -488,7 +509,8 @@ Check for and install the latest release from GitHub
   next command or save it: `search metadata --all -q > ids.txt`.
 - `--ids-file FILE` reads IDs back (one UUID per line, `#`/`//` comments
   and blank lines skipped, `-` means stdin). Positional IDs and
-  `--ids-file` combine.
+  `--ids-file` combine. Immich web links to an asset (e.g.
+  `https://immich.example.com/photos/<id>`) are accepted wherever an asset ID is.
 - Bulk commands continue on per-ID errors and exit non-zero with a
   `N of M failed` summary — inspect stderr, don't assume all-or-nothing.
 
@@ -556,7 +578,9 @@ albums separate, or rename instead of merging blindly. Always run
 - **Search → act**: `search metadata` filters by name, type, favorite,
   album membership, location, camera, dates, OCR (`--all` pages the whole
   library). Useful sets: `--is-not-in-album true` (orphans),
-  `--is-offline true`, `--make/--model`, `--city/--taken-after`.
+  `--is-offline true`, `--make/--model`, `--city/--taken-after`,
+  `--ocr 1986 -q` (scans with that year printed → pipe into `cw date-from-ocr --ids-file -`).
+  Name/path/description match substrings; city/camera fields match exactly; trashed assets are excluded.
 - **Replace**: `client-workflow replace-asset <ASSET_ID> <NEW_FILE>`
   uploads, checksum-verifies, copies metadata (albums, favorite, shared
   links, sidecar, stack), then trashes the original. Aborts on checksum
@@ -573,6 +597,19 @@ albums separate, or rename instead of merging blindly. Always run
   resume); `--size preview` + `--resize`/`--resize-video-preset` for small
   shareable copies. `fix-album-dates` reconciles date-named albums
   (report-only for year albums). `add-users-to-album-with-pattern` bulk-shares.
+- **Dates from OCR** (scanned prints with a visible year): `assets ocr ID|LINK [--json]`
+  shows Immich's OCR boxes. `client-workflow date-from-ocr (--album-id|--album-name|ID|LINK...|--ids-file|--all)
+  [--min-score 0.8]` reports each asset whose OCR contains a 4-digit year, with its web link.
+  `--all` covers the whole library in seconds (one server-side OCR search per year, then OCR check of the
+  hits) but finds many non-date numbers ("seit 1938", "2000 qm"), so it is refused with `--yes`: use it
+  as `--all --json` report (pick IDs → `--ids-file … --yes`) or `--all --interactive`. Statuses:
+  `change` (one year, differs → would become `YYYY-06-01 00:00`), `matches`, `ambiguous` (several years).
+  No flags = report only; `--json` for agents. `--yes` applies only unambiguous single-asset changes
+  (tag `immich-admin-cli/date-from-ocr`), never whole albums. Album-wide changes exist only in
+  `--interactive` (a human at a terminal; refused without one): `[a]lbum` lists every album asset with
+  old → new date and asks again; those assets get `immich-admin-cli/date-from-ocr-album`; `[n]` skips the rest
+  of an album. Agents should
+  run the report, show it to the user, and leave `--interactive` to them.
 - **Tags**: `tags upsert`, `tags bulk-tag`, `tags tag` for assignment;
   `client-workflow tag-delete --include/--exclude` for regex bulk deletion
   (permanent — dry-run first).

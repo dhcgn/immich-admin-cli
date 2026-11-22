@@ -41,6 +41,7 @@ func Assets() *cli.Command {
 			assetsCheckRemoteExistsCommand(),
 			assetsDeleteCommand(),
 			assetsCopyCommand(),
+			assetsOcrCommand(),
 		},
 	}
 }

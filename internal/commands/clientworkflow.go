@@ -41,6 +41,7 @@ func ClientWorkflow() *cli.Command {
 			findHEICTileDefectCommand(),
 			repairAssetsCommand(),
 			fixAlbumDatesCommand(),
+			dateFromOCRCommand(),
 			downloadAlbumCommand(),
 			mergeAlbumCommand(),
 			findSimilarCommand(),

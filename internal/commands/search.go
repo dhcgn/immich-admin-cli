@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/urfave/cli/v3"
 
@@ -24,7 +25,7 @@ func Search() *cli.Command {
 				Name:  "metadata",
 				Usage: "Search assets by metadata criteria (POST /search/metadata)",
 				Description: "Search for assets using metadata filters such as file name, type, camera, location, and date ranges. " +
-					"Results are paginated; use --all to fetch every page automatically.",
+					"Results are paginated; use --all to fetch every page automatically. Trashed assets are excluded.",
 				Flags: []cli.Flag{
 					// --- file / name ---
 					&cli.StringFlag{
@@ -96,11 +97,11 @@ func Search() *cli.Command {
 					// --- OCR / description ---
 					&cli.StringFlag{
 						Name:  "ocr",
-						Usage: "filter by OCR text content",
+						Usage: "filter by OCR text recognized in the image (fuzzy word match, e.g. a year printed on a scan)",
 					},
 					&cli.StringFlag{
 						Name:  "description",
-						Usage: "filter by description text",
+						Usage: "filter by description text (substring match)",
 					},
 					// --- order ---
 					&cli.StringFlag{
@@ -156,7 +157,7 @@ func searchMetadata(ctx context.Context, cmd *cli.Command) error {
 	for {
 		pager.Apply(body)
 
-		resp, err := c.API.SearchAssetsWithResponse(ctx, &immichapi.SearchAssetsParams{}, *body)
+		resp, err := workflows.SearchExcludingTrash(ctx, c, *body)
 		if err != nil {
 			return fmt.Errorf("calling POST /search/metadata: %w", err)
 		}
@@ -200,67 +201,93 @@ func searchMetadata(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-// buildMetadataSearchDto maps CLI flags to the API request body.
+// buildMetadataSearchDto maps CLI flags to the API request body. It uses only
+// the structured shape (filter/orderBy/cursor, v3.2+): the flat fields are
+// deprecated and the server rejects mixing the two shapes (400).
 func buildMetadataSearchDto(cmd *cli.Command) (*immichapi.SearchAssetsJSONRequestBody, error) {
-	body := &immichapi.MetadataSearchDto{}
-
-	if v := cmd.String("original-file-name"); v != "" {
-		body.OriginalFileName = &v
+	f := immichapi.SearchFilter{}
+	str := func(name string) *string {
+		if v := cmd.String(name); v != "" {
+			return &v
+		}
+		return nil
 	}
-	if v := cmd.String("original-path"); v != "" {
-		body.OriginalPath = &v
+	// Substring match, same as the legacy flat fields (server: ILIKE '%v%').
+	like := func(name string) *immichapi.StringPatternFilter {
+		if v := str(name); v != nil {
+			return &immichapi.StringPatternFilter{Like: v}
+		}
+		return nil
 	}
-	if v := cmd.String("type"); v != "" {
-		t := immichapi.AssetTypeEnum(v)
-		body.Type = &t
-	}
-	if v := cmd.String("city"); v != "" {
-		body.City = &v
-	}
-	if v := cmd.String("country"); v != "" {
-		body.Country = &v
-	}
-	if v := cmd.String("state"); v != "" {
-		body.State = &v
-	}
-	if v := cmd.String("make"); v != "" {
-		body.Make = &v
-	}
-	if v := cmd.String("model"); v != "" {
-		body.Model = &v
-	}
-	if v := cmd.String("lens-model"); v != "" {
-		body.LensModel = &v
-	}
-	if v := cmd.String("ocr"); v != "" {
-		body.Ocr = &v
-	}
-	if v := cmd.String("description"); v != "" {
-		body.Description = &v
-	}
-	if v := cmd.String("order"); v != "" {
-		// orderBy replaces the deprecated order field (v3.2+); Field stays
-		// nil so the server keeps its default sort field.
-		o := immichapi.AssetOrder(v)
-		body.OrderBy = &immichapi.SearchOrder{Direction: &o}
-	}
-	if err := setBoolFlag(cmd, "is-favorite", func(b bool) { body.IsFavorite = &b }); err != nil {
-		return nil, err
-	}
-	if err := setBoolFlag(cmd, "is-not-in-album", func(b bool) { body.IsNotInAlbum = &b }); err != nil {
-		return nil, err
-	}
-	if err := setBoolFlag(cmd, "is-offline", func(b bool) { body.IsOffline = &b }); err != nil {
-		return nil, err
-	}
-	if err := setBoolFlag(cmd, "is-motion", func(b bool) { body.IsMotion = &b }); err != nil {
-		return nil, err
+	// Exact match, same as the legacy flat fields.
+	eq := func(name string) *immichapi.StringFilterNullable {
+		if v := str(name); v != nil {
+			return &immichapi.StringFilterNullable{Eq: v}
+		}
+		return nil
 	}
 
-	size := cmd.Int("page-size")
-	body.Size = &size
+	f.OriginalFileName = like("original-file-name")
+	f.OriginalPath = like("original-path")
+	f.Description = like("description")
+	f.City, f.Country, f.State = eq("city"), eq("country"), eq("state")
+	f.Make, f.Model, f.LensModel = eq("make"), eq("model"), eq("lens-model")
+	if v := str("ocr"); v != nil {
+		f.Ocr = &immichapi.StringSimilarityFilter{Matches: *v}
+	}
+	if v := str("type"); v != nil {
+		t := immichapi.AssetTypeEnum(*v)
+		if !t.Valid() {
+			return nil, fmt.Errorf("invalid --type %q: must be IMAGE, VIDEO, AUDIO, or OTHER", *v)
+		}
+		f.Type = &immichapi.EnumFilterAssetType{Eq: &t}
+	}
+	for _, d := range []struct {
+		name string
+		set  func(t time.Time)
+	}{
+		{"taken-after", func(t time.Time) { ensureDate(&f.TakenAt).Gte = &t }},
+		{"taken-before", func(t time.Time) { ensureDate(&f.TakenAt).Lte = &t }},
+	} {
+		if v := str(d.name); v != nil {
+			t, err := time.Parse(time.RFC3339, *v)
+			if err != nil {
+				return nil, fmt.Errorf("flag --%s: expected RFC3339 (e.g. 2024-01-01T00:00:00Z), got %q", d.name, *v)
+			}
+			d.set(t)
+		}
+	}
+	boolFilter := func(b bool) *immichapi.BoolFilter { return &immichapi.BoolFilter{Eq: b} }
+	if err := setBoolFlag(cmd, "is-favorite", func(b bool) { f.IsFavorite = boolFilter(b) }); err != nil {
+		return nil, err
+	}
+	if err := setBoolFlag(cmd, "is-not-in-album", func(b bool) { f.HasAlbums = boolFilter(!b) }); err != nil {
+		return nil, err
+	}
+	if err := setBoolFlag(cmd, "is-offline", func(b bool) { f.IsOffline = boolFilter(b) }); err != nil {
+		return nil, err
+	}
+	if err := setBoolFlag(cmd, "is-motion", func(b bool) { f.IsMotion = boolFilter(b) }); err != nil {
+		return nil, err
+	}
 
-	return body, nil
+	o := immichapi.AssetOrder(cmd.String("order"))
+	if o != immichapi.AssetOrderAsc && o != immichapi.AssetOrderDesc {
+		return nil, fmt.Errorf("invalid --order %q: must be asc or desc", o)
+	}
+	size := int(cmd.Int("page-size"))
+	return &immichapi.MetadataSearchDto{
+		Filter:  &f,
+		OrderBy: &immichapi.SearchOrder{Direction: &o}, // Field nil = server default sort field
+		Size:    &size,
+	}, nil
+}
+
+func ensureDate(p **immichapi.DateFilter) *immichapi.DateFilter {
+	if *p == nil {
+		*p = &immichapi.DateFilter{}
+	}
+	return *p
 }
 
 // setBoolFlag parses an optional "true"/"false" string flag and calls set if provided.

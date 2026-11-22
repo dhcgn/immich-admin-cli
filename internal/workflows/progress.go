@@ -40,7 +40,7 @@ func NewByteProgress(label string, total int64, pos, n int, quiet bool) *BytePro
 		Quiet: quiet,
 		Out:   os.Stderr,
 	}
-	p.tty = isTerminalWriter(p.Out)
+	p.tty = IsTerminal(p.Out)
 	return p
 }
 
@@ -155,7 +155,8 @@ func (c *countingReader) Read(b []byte) (int, error) {
 	return n, err
 }
 
-func isTerminalWriter(w io.Writer) bool {
+// IsTerminal reports whether w is a terminal (character device).
+func IsTerminal(w io.Writer) bool {
 	f, ok := w.(*os.File)
 	if !ok {
 		return false
