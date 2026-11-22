@@ -113,20 +113,16 @@ func printAsset(a *immichapi.AssetResponseDto) {
 // assetsUpdateCommand exposes PUT /assets/{id} (updateAsset). Kept as a
 // standalone command per project convention (a client workflow driving an
 // operation also ships the raw operation), used by `client-workflow
-// fix-album-dates` to set an asset's capture date.
-//
-// updateAsset is marked deprecated upstream with a self-referential (i.e.
-// non-existent) replacementId — no stable alternative exists for setting an
-// asset's capture date, so this is the project's one deliberate, documented
-// exception to "never use deprecated endpoints" (see AGENTS.md).
+// fix-album-dates`, `date-from-ocr` and `tz-set` to set capture dates and
+// time zones.
 func assetsUpdateCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "update",
-		Usage:     "⚠ DEPRECATED upstream: update one or more assets (PUT /assets/{id})",
+		Usage:     "Update one or more assets (PUT /assets/{id}); --date-time-original with an offset also sets the time zone",
 		ArgsUsage: "[ASSET_ID ...]",
 		Description: "Updates fields on one or more assets, one request per ID (continues on per-ID error). " +
-			"updateAsset is deprecated upstream with no working replacement; kept only because it is the sole " +
-			"way to set an asset's capture date (used by client-workflow fix-album-dates).",
+			"--date-time-original sets the capture date: without offset (2020-07-15T12:00:00) as naive local time, " +
+			"with offset (2020-07-15T12:00:00+02:00) Immich also stores that offset as the time zone (UTC+2).",
 		Flags: []cli.Flag{
 			idsFileFlag(),
 			&cli.StringFlag{

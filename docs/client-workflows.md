@@ -19,6 +19,8 @@ Run destructive workflows with `--dry-run` first. Workflows show their planned a
 | `cw repair-assets` | Repair supported JPEG/TIFF defects or delete confirmed Google Takeout JSON sidecars |
 | `cw fix-album-dates` | Check date-named albums and optionally correct exact-day capture dates |
 | `cw date-from-ocr` | Set capture years from a year printed in the image (OCR), per asset or interactively per album |
+| `cw tz-audit` | Report assets per time zone class (none, UTC, offset, IANA, DST mismatch); read-only |
+| `cw tz-set` | Give assets without any time zone an IANA zone's offset, keeping the shown time |
 | `cw download-album` | Export or synchronize an album to a local folder |
 | `cw find-similar` | Find visually similar Immich assets for a local image through immich-clip-probe |
 | `cw merge-album` | Merge album contents and metadata |
@@ -99,7 +101,7 @@ immich-admin cw repair-assets --mode takeout-json --check-all-assets --dry-run
 
 `fix-album-dates` recognizes albums named `yyyy-MM-dd <title>` or `yyyy <title>`. It compares `LocalDateTime`, Immich's timezone-naive photographer-local timestamp, to the date implied by the album name. Use `--offset-days` to tolerate near-boundary camera or timezone errors.
 
-Exact-day albums can be corrected while retaining each asset's time of day; year-only albums are report-only. This is the only command that intentionally uses Immich's deprecated `updateAsset` endpoint because no replacement can set a capture date.
+Exact-day albums can be corrected while retaining each asset's time of day; year-only albums are report-only. Dates are set through `updateAsset` (`PUT /assets/{id}`).
 
 ```sh
 # Report first
@@ -129,7 +131,37 @@ immich-admin cw date-from-ocr https://immich.example.com/photos/<id> --interacti
 immich-admin cw date-from-ocr --all --interactive
 ```
 
-`--interactive` offers `[s]kip`, `[t]his -> YYYY`, `[a]lbum -> YYYY`, `[n]ext album` (skip the rest of this album), `[y]ear...` (type another year), `[o]pen` (browser) and `[q]uit`. `[a]lbum` lists every asset of the album with its current and new date and asks again (default No); assets that are already in that year are kept, and the propagated ones are tagged `immich-admin-cli/date-from-ocr-album`. `--all` finds many numbers that are not dates (e.g. "seit 1938", "2000 qm"), so it is refused together with `--yes`; review the `--all --json` report or use `--all --interactive`. Album-wide changes are not available outside `--interactive`. Like `fix-album-dates`, this uses the deprecated `updateAsset` endpoint.
+`--interactive` offers `[s]kip`, `[t]his -> YYYY`, `[a]lbum -> YYYY`, `[n]ext album` (skip the rest of this album), `[y]ear...` (type another year), `[o]pen` (browser) and `[q]uit`. `[a]lbum` lists every asset of the album with its current and new date and asks again (default No); assets that are already in that year are kept, and the propagated ones are tagged `immich-admin-cli/date-from-ocr-album`. `--all` finds many numbers that are not dates (e.g. "seit 1938", "2000 qm"), so it is refused together with `--yes`; review the `--all --json` report or use `--all --interactive`. Album-wide changes are not available outside `--interactive`. Like `fix-album-dates`, this sets dates through `updateAsset`.
+
+## Audit and Set Time Zones
+
+`tz-audit` (read-only) searches the library with EXIF data (narrow it with the `search metadata` filter flags) and counts assets per `exifInfo.timeZone` class, with the top cameras per class, then lists every distinct time zone value with its asset count (`(none)` = no zone; also `timeZones` in `--json`):
+
+| Class | Meaning |
+|-------|---------|
+| `none` | No time zone at all: EXIF without offset and no GPS. Fix with `tz-set`. |
+| `utc` | Plain `UTC`: EXIF had no offset, so the camera's wall clock was taken as UTC. |
+| `offset` | Fixed offset such as `UTC+2`. |
+| `iana` | IANA name such as `Europe/Berlin`, usually inferred from GPS. |
+| `dst-mismatch` | With `--reference-zone`: a fixed offset that is the zone's other offset on that date (e.g. `UTC+2` in January for `Europe/Berlin`), i.e. the camera clock was not switched for DST. Add `--country` to avoid hits from trips abroad. |
+| `iana-inconsistent` | IANA zone whose offset does not match `localDateTime − fileCreatedAt`. |
+
+`tz-set --time-zone <IANA>` changes only assets whose time zone is null. For each one it computes the zone's offset in effect at the asset's local date and time (DST-aware) and sets `dateTimeOriginal` to the unchanged wall-clock time with that offset. The time shown in Immich stays the same; the absolute instant moves. Assets that already have a zone, or have no `dateTimeOriginal`, are skipped. Only IANA names are accepted; fixed offsets like `UTC+1` are rejected. Immich rewrites the sidecar and re-extracts metadata afterwards, so the stored zone ends up as the fixed offset (`UTC+1`/`UTC+2`), not the IANA name.
+
+```sh
+# Overview, with the DST check for cameras used in Germany
+immich-admin cw tz-audit --reference-zone Europe/Berlin --country Germany
+
+# List the assets without a time zone of one camera
+immich-admin cw tz-audit --class none --make Canon
+
+# Preview, then apply (stdin IDs need --yes)
+immich-admin cw tz-audit --class none --make Canon -q | immich-admin cw tz-set --time-zone Europe/Berlin --ids-file - --dry-run
+immich-admin cw tz-audit --class none --make Canon -q | immich-admin cw tz-set --time-zone Europe/Berlin --ids-file - --yes
+
+# Or select by search directly: every asset without a time zone taken before 2010
+immich-admin cw tz-set --time-zone Europe/Berlin --taken-before 2010-01-01T00:00:00Z
+```
 
 ## Download or Mirror an Album
 

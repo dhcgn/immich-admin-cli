@@ -39,8 +39,7 @@ func dateFromOCRCommand() *cli.Command {
 			"album-propagated assets are tagged " + workflows.DateFromOCRAlbumTag + "), [n]ext album (skip the " +
 			"rest of this album's hits; an asset also in another album is still shown there), [y] enter another year, " +
 			"[o]pen in browser, [q]uit.\n" +
-			"Setting the date uses the deprecated PUT /assets/{id} (updateAsset), the only Immich API that can " +
-			"set a capture date (documented exception).",
+			"Dates are set through PUT /assets/{id} (updateAsset).",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "album-id", Usage: "scan every asset in this album `UUID`"},
 			&cli.StringFlag{Name: "album-name", Usage: "scan every asset in the album with this exact `NAME`"},
@@ -156,7 +155,6 @@ func clientWorkflowDateFromOCR(ctx context.Context, cmd *cli.Command) error {
 			// pointless prompts; only review what may need a change.
 			cands = withoutMatching(cands)
 		}
-		fmt.Println("Note: setting dates uses the deprecated PUT /assets/{id} endpoint — Immich has no replacement for setting a capture date.")
 		groups, err := groupOCRCandidates(cands, album, func(id openapi_types.UUID) ([]immichapi.AlbumResponseDto, error) {
 			return workflows.AlbumsForAsset(ctx, c, id)
 		})
@@ -183,7 +181,6 @@ func clientWorkflowDateFromOCR(ctx context.Context, cmd *cli.Command) error {
 		}
 		return joinErrs(fetchErr, scanErr)
 	}
-	fmt.Println("Note: setting dates uses the deprecated PUT /assets/{id} endpoint — Immich has no replacement for setting a capture date.")
 	failures := 0
 	for _, cand := range changes {
 		y, _ := cand.ProposedYear()

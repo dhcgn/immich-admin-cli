@@ -248,11 +248,7 @@ func ComputeFixedDateTime(asset immichapi.AssetResponseDto, p AlbumDatePattern) 
 // failure. In dry-run mode it prints the planned step for each asset and
 // changes nothing.
 //
-// This is the repo's one deliberate exception to "never use deprecated
-// endpoints": PUT /assets/{id} (updateAsset) is the only Immich API endpoint
-// that can set an asset's capture date, and it is marked deprecated upstream
-// with a self-referential (non-existent) replacementId — no stable
-// alternative exists (see AGENTS.md).
+// Dates are set through PUT /assets/{id} (updateAsset).
 func FixAlbumDates(ctx context.Context, c *client.Client, checks []AlbumDateCheck, opts FixAlbumDatesOptions) error {
 	return RunBatch(checks,
 		func(check AlbumDateCheck) string { return check.Album.AlbumName },

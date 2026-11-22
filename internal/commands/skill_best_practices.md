@@ -127,6 +127,16 @@ albums separate, or rename instead of merging blindly. Always run
   old → new date and asks again; those assets get `immich-admin-cli/date-from-ocr-album`; `[n]` skips the rest
   of an album. Agents should
   run the report, show it to the user, and leave `--interactive` to them.
+- **Time zones**: `client-workflow tz-audit [search filters] [--reference-zone Europe/Berlin]`
+  (read-only) counts assets per class — `none` (no zone at all), `utc` (EXIF without offset),
+  `offset` (`UTC+2`), `iana` (`Europe/Berlin`), `dst-mismatch` (camera not switched for DST; needs
+  `--reference-zone`, add `--country Germany` to avoid hits abroad), `iana-inconsistent` — with the top
+  cameras per class; `--class none [-q|--json]` lists one class. `client-workflow tz-set --time-zone
+  Europe/Berlin` gives only `none` assets the zone's DST-correct offset while keeping the shown wall-clock
+  time (never touches assets that already have a zone; IANA names only). Typical: `cw tz-audit --class
+  none --make Canon -q | cw tz-set --time-zone Europe/Berlin --ids-file - --dry-run`, then rerun with
+  `--yes` (required with stdin IDs). Immich stores the result as `UTC+1`/`UTC+2`, not the IANA name.
+  `none` assets have no GPS, so only the user knows the right zone — ask, never guess.
 - **Tags**: `tags upsert`, `tags bulk-tag`, `tags tag` for assignment;
   `client-workflow tag-delete --include/--exclude` for regex bulk deletion
   (permanent — dry-run first).

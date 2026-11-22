@@ -432,6 +432,7 @@ func (e HlsVideoResolution) Valid() bool {
 // Defines values for ImageFormat.
 const (
 	Jpeg ImageFormat = "jpeg"
+	Jxl  ImageFormat = "jxl"
 	Webp ImageFormat = "webp"
 )
 
@@ -439,6 +440,8 @@ const (
 func (e ImageFormat) Valid() bool {
 	switch e {
 	case Jpeg:
+		return true
+	case Jxl:
 		return true
 	case Webp:
 		return true
@@ -486,6 +489,7 @@ const (
 	JobNameAssetGenerateThumbnails         JobName = "AssetGenerateThumbnails"
 	JobNameAssetGenerateThumbnailsQueueAll JobName = "AssetGenerateThumbnailsQueueAll"
 	JobNameAuditTableCleanup               JobName = "AuditTableCleanup"
+	JobNameAuthChallengeCleanup            JobName = "AuthChallengeCleanup"
 	JobNameDatabaseBackup                  JobName = "DatabaseBackup"
 	JobNameFacialRecognition               JobName = "FacialRecognition"
 	JobNameFacialRecognitionQueueAll       JobName = "FacialRecognitionQueueAll"
@@ -572,6 +576,8 @@ func (e JobName) Valid() bool {
 	case JobNameAssetGenerateThumbnailsQueueAll:
 		return true
 	case JobNameAuditTableCleanup:
+		return true
+	case JobNameAuthChallengeCleanup:
 		return true
 	case JobNameDatabaseBackup:
 		return true
@@ -712,6 +718,7 @@ func (e LogLevel) Valid() bool {
 const (
 	MaintenanceActionEnd                   MaintenanceAction = "end"
 	MaintenanceActionRestoreDatabase       MaintenanceAction = "restore_database"
+	MaintenanceActionRollback              MaintenanceAction = "rollback"
 	MaintenanceActionSelectDatabaseRestore MaintenanceAction = "select_database_restore"
 	MaintenanceActionStart                 MaintenanceAction = "start"
 )
@@ -722,6 +729,8 @@ func (e MaintenanceAction) Valid() bool {
 	case MaintenanceActionEnd:
 		return true
 	case MaintenanceActionRestoreDatabase:
+		return true
+	case MaintenanceActionRollback:
 		return true
 	case MaintenanceActionSelectDatabaseRestore:
 		return true
@@ -1010,6 +1019,7 @@ const (
 	PermissionBackupDownload            Permission = "backup.download"
 	PermissionBackupList                Permission = "backup.list"
 	PermissionBackupUpload              Permission = "backup.upload"
+	PermissionClusterGroupAdmin         Permission = "clusterGroup.admin"
 	PermissionClusterGroupLeave         Permission = "clusterGroup.leave"
 	PermissionClusterGroupRead          Permission = "clusterGroup.read"
 	PermissionClusterGroupRequestCreate Permission = "clusterGroupRequest.create"
@@ -1047,6 +1057,9 @@ const (
 	PermissionPartnerDelete             Permission = "partner.delete"
 	PermissionPartnerRead               Permission = "partner.read"
 	PermissionPartnerUpdate             Permission = "partner.update"
+	PermissionPasskeyDelete             Permission = "passkey.delete"
+	PermissionPasskeyRead               Permission = "passkey.read"
+	PermissionPasskeyUpdate             Permission = "passkey.update"
 	PermissionPersonCreate              Permission = "person.create"
 	PermissionPersonDelete              Permission = "person.delete"
 	PermissionPersonMerge               Permission = "person.merge"
@@ -1237,6 +1250,8 @@ func (e Permission) Valid() bool {
 		return true
 	case PermissionBackupUpload:
 		return true
+	case PermissionClusterGroupAdmin:
+		return true
 	case PermissionClusterGroupLeave:
 		return true
 	case PermissionClusterGroupRead:
@@ -1310,6 +1325,12 @@ func (e Permission) Valid() bool {
 	case PermissionPartnerRead:
 		return true
 	case PermissionPartnerUpdate:
+		return true
+	case PermissionPasskeyDelete:
+		return true
+	case PermissionPasskeyRead:
+		return true
+	case PermissionPasskeyUpdate:
 		return true
 	case PermissionPersonCreate:
 		return true
@@ -2350,6 +2371,7 @@ func (e WorkflowResult) Valid() bool {
 const (
 	AssetCreate             WorkflowTrigger = "AssetCreate"
 	AssetMetadataExtraction WorkflowTrigger = "AssetMetadataExtraction"
+	AssetOcrExtraction      WorkflowTrigger = "AssetOcrExtraction"
 	AssetTagged             WorkflowTrigger = "AssetTagged"
 )
 
@@ -2359,6 +2381,8 @@ func (e WorkflowTrigger) Valid() bool {
 	case AssetCreate:
 		return true
 	case AssetMetadataExtraction:
+		return true
+	case AssetOcrExtraction:
 		return true
 	case AssetTagged:
 		return true
@@ -2435,6 +2459,8 @@ type AddUsersDto struct {
 
 // AdminConfigBackupsDto defines model for AdminConfigBackupsDto.
 type AdminConfigBackupsDto struct {
+	// Beta Whether the backups feature is enabled
+	Beta     *bool                        `json:"beta,omitempty"`
 	Database AdminConfigDatabaseBackupDto `json:"database"`
 }
 
@@ -2477,6 +2503,7 @@ type AdminConfigDto struct {
 	NightlyTasks     AdminConfigNightlyTasksDto     `json:"nightlyTasks"`
 	Notifications    AdminConfigNotificationsDto    `json:"notifications"`
 	Oauth            AdminConfigOAuthDto            `json:"oauth"`
+	Passkey          AdminConfigPasskeyDto          `json:"passkey"`
 	PasswordLogin    AdminConfigPasswordLoginDto    `json:"passwordLogin"`
 	ReverseGeocoding AdminConfigReverseGeocodingDto `json:"reverseGeocoding"`
 	Server           AdminConfigServerDto           `json:"server"`
@@ -2892,6 +2919,18 @@ type AdminConfigOcrDto struct {
 
 	// ModelName Name of the model to use
 	ModelName string `json:"modelName"`
+}
+
+// AdminConfigPasskeyDto defines model for AdminConfigPasskeyDto.
+type AdminConfigPasskeyDto struct {
+	// AdditionalDomains Additional domains
+	AdditionalDomains []string `json:"additionalDomains"`
+
+	// Domain Passkey domain
+	Domain *string `json:"domain"`
+
+	// Enabled Enabled
+	Enabled bool `json:"enabled"`
 }
 
 // AdminConfigPasswordLoginDto defines model for AdminConfigPasswordLoginDto.
@@ -4531,11 +4570,14 @@ type MaintenanceLoginDto struct {
 // MaintenanceStatusResponseDto defines model for MaintenanceStatusResponseDto.
 type MaintenanceStatusResponseDto struct {
 	// Action Maintenance action
-	Action   MaintenanceAction `json:"action"`
-	Active   bool              `json:"active"`
-	Error    *string           `json:"error,omitempty"`
-	Progress *int              `json:"progress,omitempty"`
-	Task     *string           `json:"task,omitempty"`
+	Action MaintenanceAction `json:"action"`
+	Active bool              `json:"active"`
+	Error  *string           `json:"error,omitempty"`
+
+	// FutoBackupsJobId FUTO Backups job ID
+	FutoBackupsJobId *string `json:"futoBackupsJobId,omitempty"`
+	Progress         *int    `json:"progress,omitempty"`
+	Task             *string `json:"task,omitempty"`
 }
 
 // ManualJobName Manual job name
@@ -5126,6 +5168,72 @@ type PartnerUpdateDto struct {
 	InTimeline bool `json:"inTimeline"`
 }
 
+// PasskeyAuthenticationFinishDto defines model for PasskeyAuthenticationFinishDto.
+type PasskeyAuthenticationFinishDto struct {
+	// Response Response returned by @simplewebauthn/browser's `startAuthentication()`
+	Response PasskeyAuthenticationFinishDto_Response `json:"response"`
+}
+
+// PasskeyAuthenticationFinishDto_Response_Response defines model for PasskeyAuthenticationFinishDto.Response.Response.
+type PasskeyAuthenticationFinishDto_Response_Response struct {
+	// UserHandle User handle
+	UserHandle           *string                `json:"userHandle,omitempty"`
+	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
+// PasskeyAuthenticationFinishDto_Response Response returned by @simplewebauthn/browser's `startAuthentication()`
+type PasskeyAuthenticationFinishDto_Response struct {
+	// Id Credential ID
+	Id                   string                                           `json:"id"`
+	Response             PasskeyAuthenticationFinishDto_Response_Response `json:"response"`
+	AdditionalProperties map[string]interface{}                           `json:"-"`
+}
+
+// PasskeyAuthenticationOptionsDto Response returned by @simplewebauthn/server's `generateAuthenticationOptions`
+type PasskeyAuthenticationOptionsDto map[string]interface{}
+
+// PasskeyRegistrationFinishDto defines model for PasskeyRegistrationFinishDto.
+type PasskeyRegistrationFinishDto struct {
+	// Name Passkey name
+	Name *string `json:"name,omitempty"`
+
+	// Response Response returned by @simplewebauthn/browser's `startAuthentication()`
+	Response interface{} `json:"response"`
+}
+
+// PasskeyRegistrationOptionsDto Response returned by @simplewebauthn/server's `generateRegistrationOptions`
+type PasskeyRegistrationOptionsDto map[string]interface{}
+
+// PasskeyResponseDto defines model for PasskeyResponseDto.
+type PasskeyResponseDto struct {
+	// CreatedAt Creation date
+	//
+	// Example: 2024-01-01T00:00:00.000Z
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Id Passkey ID
+	Id openapi_types.UUID `json:"id"`
+
+	// Name Passkey name
+	Name *string `json:"name"`
+
+	// UpdatedAt Last update date
+	//
+	// Example: 2024-01-01T00:00:00.000Z
+	UpdatedAt time.Time `json:"updatedAt"`
+
+	// UsedAt Last used date
+	//
+	// Example: 2024-01-01T00:00:00.000Z
+	UsedAt *time.Time `json:"usedAt"`
+}
+
+// PasskeyUpdateDto defines model for PasskeyUpdateDto.
+type PasskeyUpdateDto struct {
+	// Name Passkey name
+	Name *string `json:"name"`
+}
+
 // PeopleDeleteDto defines model for PeopleDeleteDto.
 type PeopleDeleteDto struct {
 	// Ids IDs to process
@@ -5529,10 +5637,35 @@ type PluginTemplateStepResponseDto struct {
 
 // PublicConfigDto Configuration properties that are visible to everyone
 type PublicConfigDto struct {
+	Ffmpeg        PublicConfigFFmpegDto        `json:"ffmpeg"`
+	Map           PublicConfigMapDto           `json:"map"`
 	Oauth         PublicConfigOAuthDto         `json:"oauth"`
+	Passkey       PublicConfigPasskeyDto       `json:"passkey"`
 	PasswordLogin PublicConfigPasswordLoginDto `json:"passwordLogin"`
 	Server        PublicConfigServerDto        `json:"server"`
-	Theme         PublicConfigThemeDto         `json:"theme"`
+}
+
+// PublicConfigFFmpegDto defines model for PublicConfigFFmpegDto.
+type PublicConfigFFmpegDto struct {
+	Realtime PublicConfigFFmpegRealtimeDto `json:"realtime"`
+}
+
+// PublicConfigFFmpegRealtimeDto defines model for PublicConfigFFmpegRealtimeDto.
+type PublicConfigFFmpegRealtimeDto struct {
+	// Enabled Enable real-time HLS transcoding (alpha)
+	Enabled bool `json:"enabled"`
+}
+
+// PublicConfigMapDto defines model for PublicConfigMapDto.
+type PublicConfigMapDto struct {
+	// DarkStyle Dark map style URL
+	DarkStyle string `json:"darkStyle"`
+
+	// Enabled Enabled
+	Enabled bool `json:"enabled"`
+
+	// LightStyle Light map style URL
+	LightStyle string `json:"lightStyle"`
 }
 
 // PublicConfigOAuthDto defines model for PublicConfigOAuthDto.
@@ -5547,6 +5680,12 @@ type PublicConfigOAuthDto struct {
 	Enabled bool `json:"enabled"`
 }
 
+// PublicConfigPasskeyDto defines model for PublicConfigPasskeyDto.
+type PublicConfigPasskeyDto struct {
+	// Enabled Enabled
+	Enabled bool `json:"enabled"`
+}
+
 // PublicConfigPasswordLoginDto defines model for PublicConfigPasswordLoginDto.
 type PublicConfigPasswordLoginDto struct {
 	// Enabled Enabled
@@ -5557,12 +5696,6 @@ type PublicConfigPasswordLoginDto struct {
 type PublicConfigServerDto struct {
 	// LoginPageMessage Login page message
 	LoginPageMessage string `json:"loginPageMessage"`
-}
-
-// PublicConfigThemeDto defines model for PublicConfigThemeDto.
-type PublicConfigThemeDto struct {
-	// CustomCss Custom CSS for theming
-	CustomCss string `json:"customCss"`
 }
 
 // PurchaseResponse defines model for PurchaseResponse.
@@ -6171,6 +6304,9 @@ type ServerConfigDto struct {
 
 // ServerFeaturesDto defines model for ServerFeaturesDto.
 type ServerFeaturesDto struct {
+	// Backups Whether the backups feature is enabled
+	Backups bool `json:"backups"`
+
 	// ConfigFile Whether config file is available
 	ConfigFile bool `json:"configFile"`
 
@@ -6299,6 +6435,9 @@ type ServerVersionHistoryResponseDto struct {
 
 // ServerVersionResponseDto defines model for ServerVersionResponseDto.
 type ServerVersionResponseDto struct {
+	// FeatureLevel Highest feature level supported by the server, which increments independently of the release version
+	FeatureLevel int `json:"featureLevel"`
+
 	// Major Major version number
 	Major int `json:"major"`
 
@@ -6413,6 +6552,12 @@ type SetMaintenanceModeDto struct {
 
 	// RestoreBackupFilename Restore backup filename
 	RestoreBackupFilename *string `json:"restoreBackupFilename,omitempty"`
+
+	// RollbackRepositoryId Rollback repository ID
+	RollbackRepositoryId *string `json:"rollbackRepositoryId,omitempty"`
+
+	// RollbackSnapshotId Rollback snapshot ID
+	RollbackSnapshotId *string `json:"rollbackSnapshotId,omitempty"`
 }
 
 // SharedLinkCreateDto defines model for SharedLinkCreateDto.
@@ -7406,11 +7551,12 @@ type UserConfigDto struct {
 	Image            UserConfigImageDto            `json:"image"`
 	MachineLearning  UserConfigMachineLearningDto  `json:"machineLearning"`
 	Map              UserConfigMapDto              `json:"map"`
+	Notifications    UserConfigNotificationsDto    `json:"notifications"`
 	Oauth            UserConfigOAuthDto            `json:"oauth"`
+	Passkey          UserConfigPasskeyDto          `json:"passkey"`
 	PasswordLogin    UserConfigPasswordLoginDto    `json:"passwordLogin"`
 	ReverseGeocoding UserConfigReverseGeocodingDto `json:"reverseGeocoding"`
 	Server           UserConfigServerDto           `json:"server"`
-	Theme            UserConfigThemeDto            `json:"theme"`
 	Trash            UserConfigTrashDto            `json:"trash"`
 	User             UserConfigUserDto             `json:"user"`
 }
@@ -7489,8 +7635,16 @@ type UserConfigMapDto struct {
 	LightStyle string `json:"lightStyle"`
 }
 
+// UserConfigNotificationsDto defines model for UserConfigNotificationsDto.
+type UserConfigNotificationsDto struct {
+	Smtp UserConfigSmtpDto `json:"smtp"`
+}
+
 // UserConfigOAuthDto defines model for UserConfigOAuthDto.
 type UserConfigOAuthDto struct {
+	// AccountManagementUrl Account management URL
+	AccountManagementUrl *string `json:"accountManagementUrl,omitempty"`
+
 	// AutoLaunch Auto launch
 	AutoLaunch bool `json:"autoLaunch"`
 
@@ -7504,6 +7658,12 @@ type UserConfigOAuthDto struct {
 // UserConfigOcrDto defines model for UserConfigOcrDto.
 type UserConfigOcrDto struct {
 	// Enabled Whether the task is enabled
+	Enabled bool `json:"enabled"`
+}
+
+// UserConfigPasskeyDto defines model for UserConfigPasskeyDto.
+type UserConfigPasskeyDto struct {
+	// Enabled Enabled
 	Enabled bool `json:"enabled"`
 }
 
@@ -7531,10 +7691,10 @@ type UserConfigServerDto struct {
 	PublicUsers bool `json:"publicUsers"`
 }
 
-// UserConfigThemeDto defines model for UserConfigThemeDto.
-type UserConfigThemeDto struct {
-	// CustomCss Custom CSS for theming
-	CustomCss string `json:"customCss"`
+// UserConfigSmtpDto defines model for UserConfigSmtpDto.
+type UserConfigSmtpDto struct {
+	// Enabled Whether SMTP email notifications are enabled
+	Enabled bool `json:"enabled"`
 }
 
 // UserConfigTrashDto defines model for UserConfigTrashDto.
@@ -8138,6 +8298,12 @@ type GetPartnersParams struct {
 	Direction PartnerDirection `form:"direction" json:"direction"`
 }
 
+// SearchPasskeysParams defines parameters for SearchPasskeys.
+type SearchPasskeysParams struct {
+	// Id Filter by passkey ID
+	Id *openapi_types.UUID `form:"id,omitempty" json:"id,omitempty"`
+}
+
 // GetAllPeopleParams defines parameters for GetAllPeople.
 type GetAllPeopleParams struct {
 	// ClosestAssetId Closest asset ID for similarity search
@@ -8596,13 +8762,9 @@ type CreateUserAdminJSONRequestBody = UserAdminCreateDto
 type DeleteUserAdminJSONRequestBody = UserAdminDeleteDto
 
 // UpdateUserAdminJSONRequestBody defines body for UpdateUserAdmin for application/json ContentType.
-//
-// Deprecated: this type has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 type UpdateUserAdminJSONRequestBody = UserAdminUpdateDto
 
 // UpdateUserPreferencesAdminJSONRequestBody defines body for UpdateUserPreferencesAdmin for application/json ContentType.
-//
-// Deprecated: this type has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 type UpdateUserPreferencesAdminJSONRequestBody = UserPreferencesUpdateDto
 
 // CreateAlbumJSONRequestBody defines body for CreateAlbum for application/json ContentType.
@@ -8630,8 +8792,6 @@ type AddUsersToAlbumJSONRequestBody = AddUsersDto
 type CreateApiKeyJSONRequestBody = ApiKeyCreateDto
 
 // UpdateApiKeyJSONRequestBody defines body for UpdateApiKey for application/json ContentType.
-//
-// Deprecated: this type has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 type UpdateApiKeyJSONRequestBody = ApiKeyUpdateDto
 
 // DeleteAssetsJSONRequestBody defines body for DeleteAssets for application/json ContentType.
@@ -8641,8 +8801,6 @@ type DeleteAssetsJSONRequestBody = AssetBulkDeleteDto
 type UploadAssetMultipartRequestBody = AssetMediaCreateDto
 
 // UpdateAssetsJSONRequestBody defines body for UpdateAssets for application/json ContentType.
-//
-// Deprecated: this type has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 type UpdateAssetsJSONRequestBody = AssetBulkUpdateDto
 
 // CheckBulkUploadJSONRequestBody defines body for CheckBulkUpload for application/json ContentType.
@@ -8661,8 +8819,6 @@ type DeleteBulkAssetMetadataJSONRequestBody = AssetMetadataBulkDeleteDto
 type UpdateBulkAssetMetadataJSONRequestBody = AssetMetadataBulkUpsertDto
 
 // UpdateAssetJSONRequestBody defines body for UpdateAsset for application/json ContentType.
-//
-// Deprecated: this type has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 type UpdateAssetJSONRequestBody = UpdateAssetDto
 
 // EditAssetJSONRequestBody defines body for EditAsset for application/json ContentType.
@@ -8728,8 +8884,6 @@ type RunQueueCommandLegacyJSONRequestBody = QueueCommandDto
 type CreateLibraryJSONRequestBody = CreateLibraryDto
 
 // UpdateLibraryJSONRequestBody defines body for UpdateLibrary for application/json ContentType.
-//
-// Deprecated: this type has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 type UpdateLibraryJSONRequestBody = UpdateLibraryDto
 
 // ValidateJSONRequestBody defines body for Validate for application/json ContentType.
@@ -8739,8 +8893,6 @@ type ValidateJSONRequestBody = ValidateLibraryDto
 type CreateMemoryJSONRequestBody = MemoryCreateDto
 
 // UpdateMemoryJSONRequestBody defines body for UpdateMemory for application/json ContentType.
-//
-// Deprecated: this type has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 type UpdateMemoryJSONRequestBody = MemoryUpdateDto
 
 // RemoveMemoryAssetsJSONRequestBody defines body for RemoveMemoryAssets for application/json ContentType.
@@ -8776,6 +8928,15 @@ type CreatePartnerJSONRequestBody = PartnerCreateDto
 // UpdatePartnerJSONRequestBody defines body for UpdatePartner for application/json ContentType.
 type UpdatePartnerJSONRequestBody = PartnerUpdateDto
 
+// FinishAuthenticationJSONRequestBody defines body for FinishAuthentication for application/json ContentType.
+type FinishAuthenticationJSONRequestBody = PasskeyAuthenticationFinishDto
+
+// FinishRegistrationJSONRequestBody defines body for FinishRegistration for application/json ContentType.
+type FinishRegistrationJSONRequestBody = PasskeyRegistrationFinishDto
+
+// UpdatePasskeyJSONRequestBody defines body for UpdatePasskey for application/json ContentType.
+type UpdatePasskeyJSONRequestBody = PasskeyUpdateDto
+
 // DeletePeopleJSONRequestBody defines body for DeletePeople for application/json ContentType.
 type DeletePeopleJSONRequestBody = PeopleDeleteDto
 
@@ -8798,8 +8959,6 @@ type UpsertPeopleUsersJSONRequestBody = PeopleUsersUpsertDto
 type DeletePersonJSONRequestBody = PersonDeleteDto
 
 // UpdatePersonJSONRequestBody defines body for UpdatePerson for application/json ContentType.
-//
-// Deprecated: this type has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 type UpdatePersonJSONRequestBody = PersonUpdateDto
 
 // MergePersonLegacyJSONRequestBody defines body for MergePersonLegacy for application/json ContentType.
@@ -8835,8 +8994,6 @@ type SetServerLicenseJSONRequestBody = LicenseKeyDto
 type CreateSessionJSONRequestBody = SessionCreateDto
 
 // UpdateSessionJSONRequestBody defines body for UpdateSession for application/json ContentType.
-//
-// Deprecated: this type has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 type UpdateSessionJSONRequestBody = SessionUpdateDto
 
 // CreateSharedLinkJSONRequestBody defines body for CreateSharedLink for application/json ContentType.
@@ -8861,8 +9018,6 @@ type DeleteStacksJSONRequestBody = BulkIdsDto
 type CreateStackJSONRequestBody = StackCreateDto
 
 // UpdateStackJSONRequestBody defines body for UpdateStack for application/json ContentType.
-//
-// Deprecated: this type has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 type UpdateStackJSONRequestBody = StackUpdateDto
 
 // DeleteSyncAckJSONRequestBody defines body for DeleteSyncAck for application/json ContentType.
@@ -8892,8 +9047,6 @@ type UpsertTagsJSONRequestBody = TagUpsertDto
 type BulkTagAssetsJSONRequestBody = TagBulkAssetsDto
 
 // UpdateTagJSONRequestBody defines body for UpdateTag for application/json ContentType.
-//
-// Deprecated: this type has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 type UpdateTagJSONRequestBody = TagUpdateDto
 
 // UntagAssetsJSONRequestBody defines body for UntagAssets for application/json ContentType.
@@ -8906,8 +9059,6 @@ type TagAssetsJSONRequestBody = BulkIdsDto
 type RestoreAssetsJSONRequestBody = BulkIdsDto
 
 // UpdateMyUserJSONRequestBody defines body for UpdateMyUser for application/json ContentType.
-//
-// Deprecated: this type has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 type UpdateMyUserJSONRequestBody = UserUpdateMeDto
 
 // SetUserLicenseJSONRequestBody defines body for SetUserLicense for application/json ContentType.
@@ -8917,8 +9068,6 @@ type SetUserLicenseJSONRequestBody = LicenseKeyDto
 type SetUserOnboardingJSONRequestBody = OnboardingDto
 
 // UpdateMyPreferencesJSONRequestBody defines body for UpdateMyPreferences for application/json ContentType.
-//
-// Deprecated: this type has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 type UpdateMyPreferencesJSONRequestBody = UserPreferencesUpdateDto
 
 // CreateProfileImageMultipartRequestBody defines body for CreateProfileImage for multipart/form-data ContentType.
@@ -8928,9 +9077,154 @@ type CreateProfileImageMultipartRequestBody = CreateProfileImageDto
 type CreateWorkflowJSONRequestBody = WorkflowCreateDto
 
 // UpdateWorkflowJSONRequestBody defines body for UpdateWorkflow for application/json ContentType.
-//
-// Deprecated: this type has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 type UpdateWorkflowJSONRequestBody = WorkflowUpdateDto
+
+// Getter for additional properties for PasskeyAuthenticationFinishDto_Response_Response. Returns the specified
+// element and whether it was found
+func (a PasskeyAuthenticationFinishDto_Response_Response) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for PasskeyAuthenticationFinishDto_Response_Response
+func (a *PasskeyAuthenticationFinishDto_Response_Response) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for PasskeyAuthenticationFinishDto_Response_Response to handle AdditionalProperties
+func (a *PasskeyAuthenticationFinishDto_Response_Response) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["userHandle"]; found {
+		err = json.Unmarshal(raw, &a.UserHandle)
+		if err != nil {
+			return fmt.Errorf("error reading 'userHandle': %w", err)
+		}
+		delete(object, "userHandle")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for PasskeyAuthenticationFinishDto_Response_Response to handle AdditionalProperties
+func (a PasskeyAuthenticationFinishDto_Response_Response) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	if a.UserHandle != nil {
+		object["userHandle"], err = json.Marshal(a.UserHandle)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'userHandle': %w", err)
+		}
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
+
+// Getter for additional properties for PasskeyAuthenticationFinishDto_Response. Returns the specified
+// element and whether it was found
+func (a PasskeyAuthenticationFinishDto_Response) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for PasskeyAuthenticationFinishDto_Response
+func (a *PasskeyAuthenticationFinishDto_Response) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for PasskeyAuthenticationFinishDto_Response to handle AdditionalProperties
+func (a *PasskeyAuthenticationFinishDto_Response) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["id"]; found {
+		err = json.Unmarshal(raw, &a.Id)
+		if err != nil {
+			return fmt.Errorf("error reading 'id': %w", err)
+		}
+		delete(object, "id")
+	}
+
+	if raw, found := object["response"]; found {
+		err = json.Unmarshal(raw, &a.Response)
+		if err != nil {
+			return fmt.Errorf("error reading 'response': %w", err)
+		}
+		delete(object, "response")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for PasskeyAuthenticationFinishDto_Response to handle AdditionalProperties
+func (a PasskeyAuthenticationFinishDto_Response) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	object["id"], err = json.Marshal(a.Id)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'id': %w", err)
+	}
+
+	object["response"], err = json.Marshal(a.Response)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'response': %w", err)
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
 
 // AsCropParameters returns the union data inside the AssetEditActionItemDto_Parameters as a CropParameters
 func (t AssetEditActionItemDto_Parameters) AsCropParameters() (CropParameters, error) {
@@ -9504,8 +9798,6 @@ type ClientInterface interface {
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PUT /admin/users/{id} (the `UpdateUserAdmin` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateUserAdminWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UpdateUserAdmin Update a user
@@ -9515,8 +9807,6 @@ type ClientInterface interface {
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with PUT /admin/users/{id} (the `UpdateUserAdmin` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateUserAdmin(ctx context.Context, id openapi_types.UUID, body UpdateUserAdminJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetUserCalendarHeatmapAdmin Retrieve calendar heatmap activity
@@ -9540,8 +9830,6 @@ type ClientInterface interface {
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PUT /admin/users/{id}/preferences (the `UpdateUserPreferencesAdmin` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateUserPreferencesAdminWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UpdateUserPreferencesAdmin Update user preferences
@@ -9551,8 +9839,6 @@ type ClientInterface interface {
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with PUT /admin/users/{id}/preferences (the `UpdateUserPreferencesAdmin` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateUserPreferencesAdmin(ctx context.Context, id openapi_types.UUID, body UpdateUserPreferencesAdminJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RestoreUserAdmin Restore a deleted user
@@ -9797,8 +10083,6 @@ type ClientInterface interface {
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PUT /api-keys/{id} (the `UpdateApiKey` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateApiKeyWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UpdateApiKey Update an API key
@@ -9808,8 +10092,6 @@ type ClientInterface interface {
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with PUT /api-keys/{id} (the `UpdateApiKey` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateApiKey(ctx context.Context, id openapi_types.UUID, body UpdateApiKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RotateApiKey Rotate an API key
@@ -9881,8 +10163,6 @@ type ClientInterface interface {
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PUT /assets (the `UpdateAssets` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateAssetsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UpdateAssets Update assets
@@ -9892,8 +10172,6 @@ type ClientInterface interface {
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with PUT /assets (the `UpdateAssets` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateAssets(ctx context.Context, body UpdateAssetsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CheckBulkUploadWithBody Check bulk upload
@@ -10007,8 +10285,6 @@ type ClientInterface interface {
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PUT /assets/{id} (the `UpdateAsset` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateAssetWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UpdateAsset Update an asset
@@ -10018,8 +10294,6 @@ type ClientInterface interface {
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with PUT /assets/{id} (the `UpdateAsset` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateAsset(ctx context.Context, id openapi_types.UUID, body UpdateAssetJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RemoveAssetEdits Remove edits from an existing asset
@@ -10626,8 +10900,6 @@ type ClientInterface interface {
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PUT /libraries/{id} (the `UpdateLibrary` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateLibraryWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UpdateLibrary Update a library
@@ -10637,8 +10909,6 @@ type ClientInterface interface {
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with PUT /libraries/{id} (the `UpdateLibrary` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateLibrary(ctx context.Context, id openapi_types.UUID, body UpdateLibraryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ScanLibrary Scan a library
@@ -10740,8 +11010,6 @@ type ClientInterface interface {
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PUT /memories/{id} (the `UpdateMemory` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateMemoryWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UpdateMemory Update a memory
@@ -10751,8 +11019,6 @@ type ClientInterface interface {
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with PUT /memories/{id} (the `UpdateMemory` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateMemory(ctx context.Context, id openapi_types.UUID, body UpdateMemoryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RemoveMemoryAssetsWithBody Remove assets from a memory
@@ -11011,6 +11277,95 @@ type ClientInterface interface {
 	// Corresponds with PUT /partners/{id} (the `UpdatePartner` operationId).
 	UpdatePartner(ctx context.Context, id openapi_types.UUID, body UpdatePartnerJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// SearchPasskeys Search passkeys
+	//
+	// Search the passkeys of the current user.
+	//
+	// Corresponds with GET /passkeys (the `SearchPasskeys` operationId).
+	SearchPasskeys(ctx context.Context, params *SearchPasskeysParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FinishAuthenticationWithBody Finish passkey authentication
+	//
+	// Verify the response from the authenticator and receive a session token.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /passkeys/authentication/finish (the `FinishAuthentication` operationId).
+	FinishAuthenticationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FinishAuthentication Finish passkey authentication
+	//
+	// Verify the response from the authenticator and receive a session token.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /passkeys/authentication/finish (the `FinishAuthentication` operationId).
+	FinishAuthentication(ctx context.Context, body FinishAuthenticationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StartAuthentication Start passkey authentication
+	//
+	// Generate the options used by the browser to sign in with a passkey.
+	//
+	// Corresponds with POST /passkeys/authentication/start (the `StartAuthentication` operationId).
+	StartAuthentication(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FinishRegistrationWithBody Finish passkey registration
+	//
+	// Verify the response from the authenticator and save the new passkey for the current user.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /passkeys/registration/finish (the `FinishRegistration` operationId).
+	FinishRegistrationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FinishRegistration Finish passkey registration
+	//
+	// Verify the response from the authenticator and save the new passkey for the current user.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /passkeys/registration/finish (the `FinishRegistration` operationId).
+	FinishRegistration(ctx context.Context, body FinishRegistrationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StartRegistration Start passkey registration
+	//
+	// Generate the options used by the browser to create a new passkey for the current user.
+	//
+	// Corresponds with POST /passkeys/registration/start (the `StartRegistration` operationId).
+	StartRegistration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeletePasskey Delete a passkey
+	//
+	// Delete a passkey by its ID. The current user must own this passkey.
+	//
+	// Corresponds with DELETE /passkeys/{id} (the `DeletePasskey` operationId).
+	DeletePasskey(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPasskey Retrieve a passkey
+	//
+	// Retrieve a passkey by its ID. The current user must own this passkey.
+	//
+	// Corresponds with GET /passkeys/{id} (the `GetPasskey` operationId).
+	GetPasskey(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdatePasskeyWithBody Update a passkey
+	//
+	// Update the name of a passkey by its ID. The current user must own this passkey.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /passkeys/{id} (the `UpdatePasskey` operationId).
+	UpdatePasskeyWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdatePasskey Update a passkey
+	//
+	// Update the name of a passkey by its ID. The current user must own this passkey.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /passkeys/{id} (the `UpdatePasskey` operationId).
+	UpdatePasskey(ctx context.Context, id openapi_types.UUID, body UpdatePasskeyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// DeletePeopleWithBody Delete people
 	//
 	// Bulk delete a list of people at once.
@@ -11165,8 +11520,6 @@ type ClientInterface interface {
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PUT /people/{id} (the `UpdatePerson` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdatePersonWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UpdatePerson Update person
@@ -11176,8 +11529,6 @@ type ClientInterface interface {
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with PUT /people/{id} (the `UpdatePerson` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdatePerson(ctx context.Context, id openapi_types.UUID, body UpdatePersonJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// MergePersonLegacyWithBody Merge people
@@ -11608,8 +11959,6 @@ type ClientInterface interface {
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PUT /sessions/{id} (the `UpdateSession` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateSessionWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UpdateSession Update a session
@@ -11619,8 +11968,6 @@ type ClientInterface interface {
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with PUT /sessions/{id} (the `UpdateSession` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateSession(ctx context.Context, id openapi_types.UUID, body UpdateSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// LockSession Lock a session
@@ -11812,8 +12159,6 @@ type ClientInterface interface {
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PUT /stacks/{id} (the `UpdateStack` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateStackWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UpdateStack Update a stack
@@ -11823,8 +12168,6 @@ type ClientInterface interface {
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with PUT /stacks/{id} (the `UpdateStack` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateStack(ctx context.Context, id openapi_types.UUID, body UpdateStackJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RemoveAssetFromStack Remove an asset from a stack
@@ -12063,8 +12406,6 @@ type ClientInterface interface {
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PUT /tags/{id} (the `UpdateTag` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateTagWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UpdateTag Update a tag
@@ -12074,8 +12415,6 @@ type ClientInterface interface {
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with PUT /tags/{id} (the `UpdateTag` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateTag(ctx context.Context, id openapi_types.UUID, body UpdateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UntagAssetsWithBody Untag assets
@@ -12181,8 +12520,6 @@ type ClientInterface interface {
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PUT /users/me (the `UpdateMyUser` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateMyUserWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UpdateMyUser Update current user
@@ -12192,8 +12529,6 @@ type ClientInterface interface {
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with PUT /users/me (the `UpdateMyUser` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateMyUser(ctx context.Context, body UpdateMyUserJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetMyCalendarHeatmap Retrieve calendar heatmap activity
@@ -12281,8 +12616,6 @@ type ClientInterface interface {
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PUT /users/me/preferences (the `UpdateMyPreferences` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateMyPreferencesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UpdateMyPreferences Update my preferences
@@ -12292,8 +12625,6 @@ type ClientInterface interface {
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with PUT /users/me/preferences (the `UpdateMyPreferences` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateMyPreferences(ctx context.Context, body UpdateMyPreferencesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DeleteProfileImage Delete user profile image
@@ -12393,8 +12724,6 @@ type ClientInterface interface {
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PUT /workflows/{id} (the `UpdateWorkflow` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateWorkflowWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UpdateWorkflow Update a workflow
@@ -12404,8 +12733,6 @@ type ClientInterface interface {
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with PUT /workflows/{id} (the `UpdateWorkflow` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateWorkflow(ctx context.Context, id openapi_types.UUID, body UpdateWorkflowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetWorkflowLogs Retrieve workflow logs
@@ -13135,7 +13462,6 @@ func (c *Client) GetUserAdmin(ctx context.Context, id openapi_types.UUID, reqEdi
 // Takes any type of body and a specified content type.
 //
 // Corresponds with PUT /admin/users/{id} (the `UpdateUserAdmin` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateUserAdminWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateUserAdminRequestWithBody(c.Server, id, contentType, body)
 	if err != nil {
@@ -13155,7 +13481,6 @@ func (c *Client) UpdateUserAdminWithBody(ctx context.Context, id openapi_types.U
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with PUT /admin/users/{id} (the `UpdateUserAdmin` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateUserAdmin(ctx context.Context, id openapi_types.UUID, body UpdateUserAdminJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateUserAdminRequest(c.Server, id, body)
 	if err != nil {
@@ -13209,7 +13534,6 @@ func (c *Client) GetUserPreferencesAdmin(ctx context.Context, id openapi_types.U
 // Takes any type of body and a specified content type.
 //
 // Corresponds with PUT /admin/users/{id}/preferences (the `UpdateUserPreferencesAdmin` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateUserPreferencesAdminWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateUserPreferencesAdminRequestWithBody(c.Server, id, contentType, body)
 	if err != nil {
@@ -13229,7 +13553,6 @@ func (c *Client) UpdateUserPreferencesAdminWithBody(ctx context.Context, id open
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with PUT /admin/users/{id}/preferences (the `UpdateUserPreferencesAdmin` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateUserPreferencesAdmin(ctx context.Context, id openapi_types.UUID, body UpdateUserPreferencesAdminJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateUserPreferencesAdminRequest(c.Server, id, body)
 	if err != nil {
@@ -13774,7 +14097,6 @@ func (c *Client) GetApiKey(ctx context.Context, id openapi_types.UUID, reqEditor
 // Takes any type of body and a specified content type.
 //
 // Corresponds with PUT /api-keys/{id} (the `UpdateApiKey` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateApiKeyWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateApiKeyRequestWithBody(c.Server, id, contentType, body)
 	if err != nil {
@@ -13794,7 +14116,6 @@ func (c *Client) UpdateApiKeyWithBody(ctx context.Context, id openapi_types.UUID
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with PUT /api-keys/{id} (the `UpdateApiKey` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateApiKey(ctx context.Context, id openapi_types.UUID, body UpdateApiKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateApiKeyRequest(c.Server, id, body)
 	if err != nil {
@@ -13956,7 +14277,6 @@ func (c *Client) UploadAssetWithBody(ctx context.Context, params *UploadAssetPar
 // Takes any type of body and a specified content type.
 //
 // Corresponds with PUT /assets (the `UpdateAssets` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateAssetsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateAssetsRequestWithBody(c.Server, contentType, body)
 	if err != nil {
@@ -13976,7 +14296,6 @@ func (c *Client) UpdateAssetsWithBody(ctx context.Context, contentType string, b
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with PUT /assets (the `UpdateAssets` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateAssets(ctx context.Context, body UpdateAssetsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateAssetsRequest(c.Server, body)
 	if err != nil {
@@ -14220,7 +14539,6 @@ func (c *Client) GetAssetInfo(ctx context.Context, id openapi_types.UUID, params
 // Takes any type of body and a specified content type.
 //
 // Corresponds with PUT /assets/{id} (the `UpdateAsset` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateAssetWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateAssetRequestWithBody(c.Server, id, contentType, body)
 	if err != nil {
@@ -14240,7 +14558,6 @@ func (c *Client) UpdateAssetWithBody(ctx context.Context, id openapi_types.UUID,
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with PUT /assets/{id} (the `UpdateAsset` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateAsset(ctx context.Context, id openapi_types.UUID, body UpdateAssetJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateAssetRequest(c.Server, id, body)
 	if err != nil {
@@ -15584,7 +15901,6 @@ func (c *Client) GetLibrary(ctx context.Context, id openapi_types.UUID, reqEdito
 // Takes any type of body and a specified content type.
 //
 // Corresponds with PUT /libraries/{id} (the `UpdateLibrary` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateLibraryWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateLibraryRequestWithBody(c.Server, id, contentType, body)
 	if err != nil {
@@ -15604,7 +15920,6 @@ func (c *Client) UpdateLibraryWithBody(ctx context.Context, id openapi_types.UUI
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with PUT /libraries/{id} (the `UpdateLibrary` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateLibrary(ctx context.Context, id openapi_types.UUID, body UpdateLibraryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateLibraryRequest(c.Server, id, body)
 	if err != nil {
@@ -15836,7 +16151,6 @@ func (c *Client) GetMemory(ctx context.Context, id openapi_types.UUID, reqEditor
 // Takes any type of body and a specified content type.
 //
 // Corresponds with PUT /memories/{id} (the `UpdateMemory` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateMemoryWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateMemoryRequestWithBody(c.Server, id, contentType, body)
 	if err != nil {
@@ -15856,7 +16170,6 @@ func (c *Client) UpdateMemoryWithBody(ctx context.Context, id openapi_types.UUID
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with PUT /memories/{id} (the `UpdateMemory` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateMemory(ctx context.Context, id openapi_types.UUID, body UpdateMemoryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateMemoryRequest(c.Server, id, body)
 	if err != nil {
@@ -16424,6 +16737,205 @@ func (c *Client) UpdatePartner(ctx context.Context, id openapi_types.UUID, body 
 	return c.Client.Do(req)
 }
 
+// SearchPasskeys Search passkeys
+//
+// Search the passkeys of the current user.
+//
+// Corresponds with GET /passkeys (the `SearchPasskeys` operationId).
+func (c *Client) SearchPasskeys(ctx context.Context, params *SearchPasskeysParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSearchPasskeysRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FinishAuthenticationWithBody Finish passkey authentication
+//
+// Verify the response from the authenticator and receive a session token.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /passkeys/authentication/finish (the `FinishAuthentication` operationId).
+func (c *Client) FinishAuthenticationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFinishAuthenticationRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FinishAuthentication Finish passkey authentication
+//
+// Verify the response from the authenticator and receive a session token.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /passkeys/authentication/finish (the `FinishAuthentication` operationId).
+func (c *Client) FinishAuthentication(ctx context.Context, body FinishAuthenticationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFinishAuthenticationRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// StartAuthentication Start passkey authentication
+//
+// Generate the options used by the browser to sign in with a passkey.
+//
+// Corresponds with POST /passkeys/authentication/start (the `StartAuthentication` operationId).
+func (c *Client) StartAuthentication(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStartAuthenticationRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FinishRegistrationWithBody Finish passkey registration
+//
+// Verify the response from the authenticator and save the new passkey for the current user.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /passkeys/registration/finish (the `FinishRegistration` operationId).
+func (c *Client) FinishRegistrationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFinishRegistrationRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FinishRegistration Finish passkey registration
+//
+// Verify the response from the authenticator and save the new passkey for the current user.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /passkeys/registration/finish (the `FinishRegistration` operationId).
+func (c *Client) FinishRegistration(ctx context.Context, body FinishRegistrationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFinishRegistrationRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// StartRegistration Start passkey registration
+//
+// Generate the options used by the browser to create a new passkey for the current user.
+//
+// Corresponds with POST /passkeys/registration/start (the `StartRegistration` operationId).
+func (c *Client) StartRegistration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStartRegistrationRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeletePasskey Delete a passkey
+//
+// Delete a passkey by its ID. The current user must own this passkey.
+//
+// Corresponds with DELETE /passkeys/{id} (the `DeletePasskey` operationId).
+func (c *Client) DeletePasskey(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeletePasskeyRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetPasskey Retrieve a passkey
+//
+// Retrieve a passkey by its ID. The current user must own this passkey.
+//
+// Corresponds with GET /passkeys/{id} (the `GetPasskey` operationId).
+func (c *Client) GetPasskey(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPasskeyRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdatePasskeyWithBody Update a passkey
+//
+// Update the name of a passkey by its ID. The current user must own this passkey.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /passkeys/{id} (the `UpdatePasskey` operationId).
+func (c *Client) UpdatePasskeyWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdatePasskeyRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdatePasskey Update a passkey
+//
+// Update the name of a passkey by its ID. The current user must own this passkey.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /passkeys/{id} (the `UpdatePasskey` operationId).
+func (c *Client) UpdatePasskey(ctx context.Context, id openapi_types.UUID, body UpdatePasskeyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdatePasskeyRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // DeletePeopleWithBody Delete people
 //
 // Bulk delete a list of people at once.
@@ -16748,7 +17260,6 @@ func (c *Client) GetPerson(ctx context.Context, id openapi_types.UUID, reqEditor
 // Takes any type of body and a specified content type.
 //
 // Corresponds with PUT /people/{id} (the `UpdatePerson` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdatePersonWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdatePersonRequestWithBody(c.Server, id, contentType, body)
 	if err != nil {
@@ -16768,7 +17279,6 @@ func (c *Client) UpdatePersonWithBody(ctx context.Context, id openapi_types.UUID
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with PUT /people/{id} (the `UpdatePerson` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdatePerson(ctx context.Context, id openapi_types.UUID, body UpdatePersonJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdatePersonRequest(c.Server, id, body)
 	if err != nil {
@@ -17734,7 +18244,6 @@ func (c *Client) DeleteSession(ctx context.Context, id openapi_types.UUID, reqEd
 // Takes any type of body and a specified content type.
 //
 // Corresponds with PUT /sessions/{id} (the `UpdateSession` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateSessionWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateSessionRequestWithBody(c.Server, id, contentType, body)
 	if err != nil {
@@ -17754,7 +18263,6 @@ func (c *Client) UpdateSessionWithBody(ctx context.Context, id openapi_types.UUI
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with PUT /sessions/{id} (the `UpdateSession` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateSession(ctx context.Context, id openapi_types.UUID, body UpdateSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateSessionRequest(c.Server, id, body)
 	if err != nil {
@@ -18176,7 +18684,6 @@ func (c *Client) GetStack(ctx context.Context, id openapi_types.UUID, reqEditors
 // Takes any type of body and a specified content type.
 //
 // Corresponds with PUT /stacks/{id} (the `UpdateStack` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateStackWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateStackRequestWithBody(c.Server, id, contentType, body)
 	if err != nil {
@@ -18196,7 +18703,6 @@ func (c *Client) UpdateStackWithBody(ctx context.Context, id openapi_types.UUID,
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with PUT /stacks/{id} (the `UpdateStack` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateStack(ctx context.Context, id openapi_types.UUID, body UpdateStackJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateStackRequest(c.Server, id, body)
 	if err != nil {
@@ -18711,7 +19217,6 @@ func (c *Client) GetTagById(ctx context.Context, id openapi_types.UUID, reqEdito
 // Takes any type of body and a specified content type.
 //
 // Corresponds with PUT /tags/{id} (the `UpdateTag` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateTagWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateTagRequestWithBody(c.Server, id, contentType, body)
 	if err != nil {
@@ -18731,7 +19236,6 @@ func (c *Client) UpdateTagWithBody(ctx context.Context, id openapi_types.UUID, c
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with PUT /tags/{id} (the `UpdateTag` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateTag(ctx context.Context, id openapi_types.UUID, body UpdateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateTagRequest(c.Server, id, body)
 	if err != nil {
@@ -18967,7 +19471,6 @@ func (c *Client) GetMyUser(ctx context.Context, reqEditors ...RequestEditorFn) (
 // Takes any type of body and a specified content type.
 //
 // Corresponds with PUT /users/me (the `UpdateMyUser` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateMyUserWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateMyUserRequestWithBody(c.Server, contentType, body)
 	if err != nil {
@@ -18987,7 +19490,6 @@ func (c *Client) UpdateMyUserWithBody(ctx context.Context, contentType string, b
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with PUT /users/me (the `UpdateMyUser` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateMyUser(ctx context.Context, body UpdateMyUserJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateMyUserRequest(c.Server, body)
 	if err != nil {
@@ -19185,7 +19687,6 @@ func (c *Client) GetMyPreferences(ctx context.Context, reqEditors ...RequestEdit
 // Takes any type of body and a specified content type.
 //
 // Corresponds with PUT /users/me/preferences (the `UpdateMyPreferences` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateMyPreferencesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateMyPreferencesRequestWithBody(c.Server, contentType, body)
 	if err != nil {
@@ -19205,7 +19706,6 @@ func (c *Client) UpdateMyPreferencesWithBody(ctx context.Context, contentType st
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with PUT /users/me/preferences (the `UpdateMyPreferences` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateMyPreferences(ctx context.Context, body UpdateMyPreferencesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateMyPreferencesRequest(c.Server, body)
 	if err != nil {
@@ -19435,7 +19935,6 @@ func (c *Client) GetWorkflow(ctx context.Context, id openapi_types.UUID, reqEdit
 // Takes any type of body and a specified content type.
 //
 // Corresponds with PUT /workflows/{id} (the `UpdateWorkflow` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateWorkflowWithBody(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateWorkflowRequestWithBody(c.Server, id, contentType, body)
 	if err != nil {
@@ -19455,7 +19954,6 @@ func (c *Client) UpdateWorkflowWithBody(ctx context.Context, id openapi_types.UU
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with PUT /workflows/{id} (the `UpdateWorkflow` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *Client) UpdateWorkflow(ctx context.Context, id openapi_types.UUID, body UpdateWorkflowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateWorkflowRequest(c.Server, id, body)
 	if err != nil {
@@ -26677,6 +27175,309 @@ func NewUpdatePartnerRequestWithBody(server string, id openapi_types.UUID, conte
 	return req, nil
 }
 
+// NewSearchPasskeysRequest constructs an http.Request for the SearchPasskeys method
+func NewSearchPasskeysRequest(server string, params *SearchPasskeysParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/passkeys")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Id != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "id", *params.Id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewFinishAuthenticationRequest calls the generic FinishAuthentication builder with application/json body
+func NewFinishAuthenticationRequest(server string, body FinishAuthenticationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewFinishAuthenticationRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewFinishAuthenticationRequestWithBody constructs an http.Request for the FinishAuthentication method, with any body, and a specified content type
+func NewFinishAuthenticationRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/passkeys/authentication/finish")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewStartAuthenticationRequest constructs an http.Request for the StartAuthentication method
+func NewStartAuthenticationRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/passkeys/authentication/start")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewFinishRegistrationRequest calls the generic FinishRegistration builder with application/json body
+func NewFinishRegistrationRequest(server string, body FinishRegistrationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewFinishRegistrationRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewFinishRegistrationRequestWithBody constructs an http.Request for the FinishRegistration method, with any body, and a specified content type
+func NewFinishRegistrationRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/passkeys/registration/finish")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewStartRegistrationRequest constructs an http.Request for the StartRegistration method
+func NewStartRegistrationRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/passkeys/registration/start")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeletePasskeyRequest constructs an http.Request for the DeletePasskey method
+func NewDeletePasskeyRequest(server string, id openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/passkeys/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetPasskeyRequest constructs an http.Request for the GetPasskey method
+func NewGetPasskeyRequest(server string, id openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/passkeys/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdatePasskeyRequest calls the generic UpdatePasskey builder with application/json body
+func NewUpdatePasskeyRequest(server string, id openapi_types.UUID, body UpdatePasskeyJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdatePasskeyRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewUpdatePasskeyRequestWithBody constructs an http.Request for the UpdatePasskey method, with any body, and a specified content type
+func NewUpdatePasskeyRequestWithBody(server string, id openapi_types.UUID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/passkeys/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewDeletePeopleRequest calls the generic DeletePeople builder with application/json body
 func NewDeletePeopleRequest(server string, body DeletePeopleJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -33053,8 +33854,6 @@ type ClientWithResponsesInterface interface {
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /admin/users/{id} (the `UpdateUserAdmin` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateUserAdminWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateUserAdminResponse, error)
 
 	// UpdateUserAdminWithResponse Update a user
@@ -33064,8 +33863,6 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /admin/users/{id} (the `UpdateUserAdmin` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateUserAdminWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateUserAdminJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateUserAdminResponse, error)
 
 	// GetUserCalendarHeatmapAdminWithResponse Retrieve calendar heatmap activity
@@ -33093,8 +33890,6 @@ type ClientWithResponsesInterface interface {
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /admin/users/{id}/preferences (the `UpdateUserPreferencesAdmin` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateUserPreferencesAdminWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateUserPreferencesAdminResponse, error)
 
 	// UpdateUserPreferencesAdminWithResponse Update user preferences
@@ -33104,8 +33899,6 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /admin/users/{id}/preferences (the `UpdateUserPreferencesAdmin` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateUserPreferencesAdminWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateUserPreferencesAdminJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateUserPreferencesAdminResponse, error)
 
 	// RestoreUserAdminWithResponse Restore a deleted user
@@ -33376,8 +34169,6 @@ type ClientWithResponsesInterface interface {
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /api-keys/{id} (the `UpdateApiKey` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateApiKeyWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateApiKeyResponse, error)
 
 	// UpdateApiKeyWithResponse Update an API key
@@ -33387,8 +34178,6 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /api-keys/{id} (the `UpdateApiKey` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateApiKeyWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateApiKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateApiKeyResponse, error)
 
 	// RotateApiKeyWithResponse Rotate an API key
@@ -33470,8 +34259,6 @@ type ClientWithResponsesInterface interface {
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /assets (the `UpdateAssets` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateAssetsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateAssetsResponse, error)
 
 	// UpdateAssetsWithResponse Update assets
@@ -33481,8 +34268,6 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /assets (the `UpdateAssets` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateAssetsWithResponse(ctx context.Context, body UpdateAssetsJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateAssetsResponse, error)
 
 	// CheckBulkUploadWithBodyWithResponse Check bulk upload
@@ -33600,8 +34385,6 @@ type ClientWithResponsesInterface interface {
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /assets/{id} (the `UpdateAsset` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateAssetWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateAssetResponse, error)
 
 	// UpdateAssetWithResponse Update an asset
@@ -33611,8 +34394,6 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /assets/{id} (the `UpdateAsset` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateAssetWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateAssetJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateAssetResponse, error)
 
 	// RemoveAssetEditsWithResponse Remove edits from an existing asset
@@ -34285,8 +35066,6 @@ type ClientWithResponsesInterface interface {
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /libraries/{id} (the `UpdateLibrary` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateLibraryWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateLibraryResponse, error)
 
 	// UpdateLibraryWithResponse Update a library
@@ -34296,8 +35075,6 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /libraries/{id} (the `UpdateLibrary` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateLibraryWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateLibraryJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateLibraryResponse, error)
 
 	// ScanLibraryWithResponse Scan a library
@@ -34415,8 +35192,6 @@ type ClientWithResponsesInterface interface {
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /memories/{id} (the `UpdateMemory` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateMemoryWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateMemoryResponse, error)
 
 	// UpdateMemoryWithResponse Update a memory
@@ -34426,8 +35201,6 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /memories/{id} (the `UpdateMemory` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateMemoryWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateMemoryJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateMemoryResponse, error)
 
 	// RemoveMemoryAssetsWithBodyWithResponse Remove assets from a memory
@@ -34702,6 +35475,105 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PUT /partners/{id} (the `UpdatePartner` operationId).
 	UpdatePartnerWithResponse(ctx context.Context, id openapi_types.UUID, body UpdatePartnerJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdatePartnerResponse, error)
 
+	// SearchPasskeysWithResponse Search passkeys
+	//
+	// Search the passkeys of the current user.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /passkeys (the `SearchPasskeys` operationId).
+	SearchPasskeysWithResponse(ctx context.Context, params *SearchPasskeysParams, reqEditors ...RequestEditorFn) (*SearchPasskeysResponse, error)
+
+	// FinishAuthenticationWithBodyWithResponse Finish passkey authentication
+	//
+	// Verify the response from the authenticator and receive a session token.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /passkeys/authentication/finish (the `FinishAuthentication` operationId).
+	FinishAuthenticationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FinishAuthenticationResponse, error)
+
+	// FinishAuthenticationWithResponse Finish passkey authentication
+	//
+	// Verify the response from the authenticator and receive a session token.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /passkeys/authentication/finish (the `FinishAuthentication` operationId).
+	FinishAuthenticationWithResponse(ctx context.Context, body FinishAuthenticationJSONRequestBody, reqEditors ...RequestEditorFn) (*FinishAuthenticationResponse, error)
+
+	// StartAuthenticationWithResponse Start passkey authentication
+	//
+	// Generate the options used by the browser to sign in with a passkey.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /passkeys/authentication/start (the `StartAuthentication` operationId).
+	StartAuthenticationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StartAuthenticationResponse, error)
+
+	// FinishRegistrationWithBodyWithResponse Finish passkey registration
+	//
+	// Verify the response from the authenticator and save the new passkey for the current user.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /passkeys/registration/finish (the `FinishRegistration` operationId).
+	FinishRegistrationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FinishRegistrationResponse, error)
+
+	// FinishRegistrationWithResponse Finish passkey registration
+	//
+	// Verify the response from the authenticator and save the new passkey for the current user.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /passkeys/registration/finish (the `FinishRegistration` operationId).
+	FinishRegistrationWithResponse(ctx context.Context, body FinishRegistrationJSONRequestBody, reqEditors ...RequestEditorFn) (*FinishRegistrationResponse, error)
+
+	// StartRegistrationWithResponse Start passkey registration
+	//
+	// Generate the options used by the browser to create a new passkey for the current user.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /passkeys/registration/start (the `StartRegistration` operationId).
+	StartRegistrationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StartRegistrationResponse, error)
+
+	// DeletePasskeyWithResponse Delete a passkey
+	//
+	// Delete a passkey by its ID. The current user must own this passkey.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /passkeys/{id} (the `DeletePasskey` operationId).
+	DeletePasskeyWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeletePasskeyResponse, error)
+
+	// GetPasskeyWithResponse Retrieve a passkey
+	//
+	// Retrieve a passkey by its ID. The current user must own this passkey.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /passkeys/{id} (the `GetPasskey` operationId).
+	GetPasskeyWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetPasskeyResponse, error)
+
+	// UpdatePasskeyWithBodyWithResponse Update a passkey
+	//
+	// Update the name of a passkey by its ID. The current user must own this passkey.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /passkeys/{id} (the `UpdatePasskey` operationId).
+	UpdatePasskeyWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdatePasskeyResponse, error)
+
+	// UpdatePasskeyWithResponse Update a passkey
+	//
+	// Update the name of a passkey by its ID. The current user must own this passkey.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /passkeys/{id} (the `UpdatePasskey` operationId).
+	UpdatePasskeyWithResponse(ctx context.Context, id openapi_types.UUID, body UpdatePasskeyJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdatePasskeyResponse, error)
+
 	// DeletePeopleWithBodyWithResponse Delete people
 	//
 	// Bulk delete a list of people at once.
@@ -34862,8 +35734,6 @@ type ClientWithResponsesInterface interface {
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /people/{id} (the `UpdatePerson` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdatePersonWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdatePersonResponse, error)
 
 	// UpdatePersonWithResponse Update person
@@ -34873,8 +35743,6 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /people/{id} (the `UpdatePerson` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdatePersonWithResponse(ctx context.Context, id openapi_types.UUID, body UpdatePersonJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdatePersonResponse, error)
 
 	// MergePersonLegacyWithBodyWithResponse Merge people
@@ -35371,8 +36239,6 @@ type ClientWithResponsesInterface interface {
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /sessions/{id} (the `UpdateSession` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateSessionWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateSessionResponse, error)
 
 	// UpdateSessionWithResponse Update a session
@@ -35382,8 +36248,6 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /sessions/{id} (the `UpdateSession` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateSessionWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateSessionResponse, error)
 
 	// LockSessionWithResponse Lock a session
@@ -35591,8 +36455,6 @@ type ClientWithResponsesInterface interface {
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /stacks/{id} (the `UpdateStack` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateStackWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateStackResponse, error)
 
 	// UpdateStackWithResponse Update a stack
@@ -35602,8 +36464,6 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /stacks/{id} (the `UpdateStack` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateStackWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateStackJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateStackResponse, error)
 
 	// RemoveAssetFromStackWithResponse Remove an asset from a stack
@@ -35864,8 +36724,6 @@ type ClientWithResponsesInterface interface {
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /tags/{id} (the `UpdateTag` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateTagWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateTagResponse, error)
 
 	// UpdateTagWithResponse Update a tag
@@ -35875,8 +36733,6 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /tags/{id} (the `UpdateTag` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateTagWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateTagResponse, error)
 
 	// UntagAssetsWithBodyWithResponse Untag assets
@@ -35994,8 +36850,6 @@ type ClientWithResponsesInterface interface {
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /users/me (the `UpdateMyUser` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateMyUserWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateMyUserResponse, error)
 
 	// UpdateMyUserWithResponse Update current user
@@ -36005,8 +36859,6 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /users/me (the `UpdateMyUser` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateMyUserWithResponse(ctx context.Context, body UpdateMyUserJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateMyUserResponse, error)
 
 	// GetMyCalendarHeatmapWithResponse Retrieve calendar heatmap activity
@@ -36106,8 +36958,6 @@ type ClientWithResponsesInterface interface {
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /users/me/preferences (the `UpdateMyPreferences` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateMyPreferencesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateMyPreferencesResponse, error)
 
 	// UpdateMyPreferencesWithResponse Update my preferences
@@ -36117,8 +36967,6 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /users/me/preferences (the `UpdateMyPreferences` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateMyPreferencesWithResponse(ctx context.Context, body UpdateMyPreferencesJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateMyPreferencesResponse, error)
 
 	// DeleteProfileImageWithResponse Delete user profile image
@@ -36236,8 +37084,6 @@ type ClientWithResponsesInterface interface {
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /workflows/{id} (the `UpdateWorkflow` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateWorkflowWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateWorkflowResponse, error)
 
 	// UpdateWorkflowWithResponse Update a workflow
@@ -36247,8 +37093,6 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /workflows/{id} (the `UpdateWorkflow` operationId).
-	//
-	// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	UpdateWorkflowWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateWorkflowJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateWorkflowResponse, error)
 
 	// GetWorkflowLogsWithResponse Retrieve workflow logs
@@ -42254,6 +43098,327 @@ func (r UpdatePartnerResponse) ContentType() string {
 	return ""
 }
 
+type SearchPasskeysResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]PasskeyResponseDto
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SearchPasskeysResponse) GetJSON200() *[]PasskeyResponseDto {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r SearchPasskeysResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SearchPasskeysResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SearchPasskeysResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SearchPasskeysResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type FinishAuthenticationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *LoginResponseDto
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r FinishAuthenticationResponse) GetJSON201() *LoginResponseDto {
+	return r.JSON201
+}
+
+// GetBody returns the raw response body bytes
+func (r FinishAuthenticationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r FinishAuthenticationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FinishAuthenticationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r FinishAuthenticationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type StartAuthenticationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PasskeyAuthenticationOptionsDto
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r StartAuthenticationResponse) GetJSON200() *PasskeyAuthenticationOptionsDto {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r StartAuthenticationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r StartAuthenticationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StartAuthenticationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r StartAuthenticationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type FinishRegistrationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *PasskeyResponseDto
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r FinishRegistrationResponse) GetJSON201() *PasskeyResponseDto {
+	return r.JSON201
+}
+
+// GetBody returns the raw response body bytes
+func (r FinishRegistrationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r FinishRegistrationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FinishRegistrationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r FinishRegistrationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type StartRegistrationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PasskeyRegistrationOptionsDto
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r StartRegistrationResponse) GetJSON200() *PasskeyRegistrationOptionsDto {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r StartRegistrationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r StartRegistrationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StartRegistrationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r StartRegistrationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeletePasskeyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// GetBody returns the raw response body bytes
+func (r DeletePasskeyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeletePasskeyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeletePasskeyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeletePasskeyResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetPasskeyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PasskeyResponseDto
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetPasskeyResponse) GetJSON200() *PasskeyResponseDto {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetPasskeyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPasskeyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPasskeyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetPasskeyResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdatePasskeyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PasskeyResponseDto
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdatePasskeyResponse) GetJSON200() *PasskeyResponseDto {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdatePasskeyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdatePasskeyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdatePasskeyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdatePasskeyResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type DeletePeopleResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -47762,8 +48927,6 @@ func (c *ClientWithResponses) GetUserAdminWithResponse(ctx context.Context, id o
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /admin/users/{id} (the `UpdateUserAdmin` operationId).
-//
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateUserAdminWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateUserAdminResponse, error) {
 	rsp, err := c.UpdateUserAdminWithBody(ctx, id, contentType, body, reqEditors...)
 	if err != nil {
@@ -47779,7 +48942,6 @@ func (c *ClientWithResponses) UpdateUserAdminWithBodyWithResponse(ctx context.Co
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /admin/users/{id} (the `UpdateUserAdmin` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateUserAdminWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateUserAdminJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateUserAdminResponse, error) {
 	rsp, err := c.UpdateUserAdmin(ctx, id, body, reqEditors...)
 	if err != nil {
@@ -47825,8 +48987,6 @@ func (c *ClientWithResponses) GetUserPreferencesAdminWithResponse(ctx context.Co
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /admin/users/{id}/preferences (the `UpdateUserPreferencesAdmin` operationId).
-//
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateUserPreferencesAdminWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateUserPreferencesAdminResponse, error) {
 	rsp, err := c.UpdateUserPreferencesAdminWithBody(ctx, id, contentType, body, reqEditors...)
 	if err != nil {
@@ -47842,7 +49002,6 @@ func (c *ClientWithResponses) UpdateUserPreferencesAdminWithBodyWithResponse(ctx
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /admin/users/{id}/preferences (the `UpdateUserPreferencesAdmin` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateUserPreferencesAdminWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateUserPreferencesAdminJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateUserPreferencesAdminResponse, error) {
 	rsp, err := c.UpdateUserPreferencesAdmin(ctx, id, body, reqEditors...)
 	if err != nil {
@@ -48293,8 +49452,6 @@ func (c *ClientWithResponses) GetApiKeyWithResponse(ctx context.Context, id open
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /api-keys/{id} (the `UpdateApiKey` operationId).
-//
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateApiKeyWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateApiKeyResponse, error) {
 	rsp, err := c.UpdateApiKeyWithBody(ctx, id, contentType, body, reqEditors...)
 	if err != nil {
@@ -48310,7 +49467,6 @@ func (c *ClientWithResponses) UpdateApiKeyWithBodyWithResponse(ctx context.Conte
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /api-keys/{id} (the `UpdateApiKey` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateApiKeyWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateApiKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateApiKeyResponse, error) {
 	rsp, err := c.UpdateApiKey(ctx, id, body, reqEditors...)
 	if err != nil {
@@ -48446,8 +49602,6 @@ func (c *ClientWithResponses) UploadAssetWithBodyWithResponse(ctx context.Contex
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /assets (the `UpdateAssets` operationId).
-//
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateAssetsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateAssetsResponse, error) {
 	rsp, err := c.UpdateAssetsWithBody(ctx, contentType, body, reqEditors...)
 	if err != nil {
@@ -48463,7 +49617,6 @@ func (c *ClientWithResponses) UpdateAssetsWithBodyWithResponse(ctx context.Conte
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /assets (the `UpdateAssets` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateAssetsWithResponse(ctx context.Context, body UpdateAssetsJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateAssetsResponse, error) {
 	rsp, err := c.UpdateAssets(ctx, body, reqEditors...)
 	if err != nil {
@@ -48659,8 +49812,6 @@ func (c *ClientWithResponses) GetAssetInfoWithResponse(ctx context.Context, id o
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /assets/{id} (the `UpdateAsset` operationId).
-//
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateAssetWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateAssetResponse, error) {
 	rsp, err := c.UpdateAssetWithBody(ctx, id, contentType, body, reqEditors...)
 	if err != nil {
@@ -48676,7 +49827,6 @@ func (c *ClientWithResponses) UpdateAssetWithBodyWithResponse(ctx context.Contex
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /assets/{id} (the `UpdateAsset` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateAssetWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateAssetJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateAssetResponse, error) {
 	rsp, err := c.UpdateAsset(ctx, id, body, reqEditors...)
 	if err != nil {
@@ -49792,8 +50942,6 @@ func (c *ClientWithResponses) GetLibraryWithResponse(ctx context.Context, id ope
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /libraries/{id} (the `UpdateLibrary` operationId).
-//
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateLibraryWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateLibraryResponse, error) {
 	rsp, err := c.UpdateLibraryWithBody(ctx, id, contentType, body, reqEditors...)
 	if err != nil {
@@ -49809,7 +50957,6 @@ func (c *ClientWithResponses) UpdateLibraryWithBodyWithResponse(ctx context.Cont
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /libraries/{id} (the `UpdateLibrary` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateLibraryWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateLibraryJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateLibraryResponse, error) {
 	rsp, err := c.UpdateLibrary(ctx, id, body, reqEditors...)
 	if err != nil {
@@ -50005,8 +51152,6 @@ func (c *ClientWithResponses) GetMemoryWithResponse(ctx context.Context, id open
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /memories/{id} (the `UpdateMemory` operationId).
-//
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateMemoryWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateMemoryResponse, error) {
 	rsp, err := c.UpdateMemoryWithBody(ctx, id, contentType, body, reqEditors...)
 	if err != nil {
@@ -50022,7 +51167,6 @@ func (c *ClientWithResponses) UpdateMemoryWithBodyWithResponse(ctx context.Conte
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /memories/{id} (the `UpdateMemory` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateMemoryWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateMemoryJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateMemoryResponse, error) {
 	rsp, err := c.UpdateMemory(ctx, id, body, reqEditors...)
 	if err != nil {
@@ -50483,6 +51627,171 @@ func (c *ClientWithResponses) UpdatePartnerWithResponse(ctx context.Context, id 
 	return ParseUpdatePartnerResponse(rsp)
 }
 
+// SearchPasskeysWithResponse Search passkeys
+//
+// Search the passkeys of the current user.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /passkeys (the `SearchPasskeys` operationId).
+func (c *ClientWithResponses) SearchPasskeysWithResponse(ctx context.Context, params *SearchPasskeysParams, reqEditors ...RequestEditorFn) (*SearchPasskeysResponse, error) {
+	rsp, err := c.SearchPasskeys(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSearchPasskeysResponse(rsp)
+}
+
+// FinishAuthenticationWithBodyWithResponse Finish passkey authentication
+//
+// Verify the response from the authenticator and receive a session token.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /passkeys/authentication/finish (the `FinishAuthentication` operationId).
+func (c *ClientWithResponses) FinishAuthenticationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FinishAuthenticationResponse, error) {
+	rsp, err := c.FinishAuthenticationWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFinishAuthenticationResponse(rsp)
+}
+
+// FinishAuthenticationWithResponse Finish passkey authentication
+//
+// Verify the response from the authenticator and receive a session token.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /passkeys/authentication/finish (the `FinishAuthentication` operationId).
+func (c *ClientWithResponses) FinishAuthenticationWithResponse(ctx context.Context, body FinishAuthenticationJSONRequestBody, reqEditors ...RequestEditorFn) (*FinishAuthenticationResponse, error) {
+	rsp, err := c.FinishAuthentication(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFinishAuthenticationResponse(rsp)
+}
+
+// StartAuthenticationWithResponse Start passkey authentication
+//
+// Generate the options used by the browser to sign in with a passkey.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /passkeys/authentication/start (the `StartAuthentication` operationId).
+func (c *ClientWithResponses) StartAuthenticationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StartAuthenticationResponse, error) {
+	rsp, err := c.StartAuthentication(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStartAuthenticationResponse(rsp)
+}
+
+// FinishRegistrationWithBodyWithResponse Finish passkey registration
+//
+// Verify the response from the authenticator and save the new passkey for the current user.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /passkeys/registration/finish (the `FinishRegistration` operationId).
+func (c *ClientWithResponses) FinishRegistrationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FinishRegistrationResponse, error) {
+	rsp, err := c.FinishRegistrationWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFinishRegistrationResponse(rsp)
+}
+
+// FinishRegistrationWithResponse Finish passkey registration
+//
+// Verify the response from the authenticator and save the new passkey for the current user.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /passkeys/registration/finish (the `FinishRegistration` operationId).
+func (c *ClientWithResponses) FinishRegistrationWithResponse(ctx context.Context, body FinishRegistrationJSONRequestBody, reqEditors ...RequestEditorFn) (*FinishRegistrationResponse, error) {
+	rsp, err := c.FinishRegistration(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFinishRegistrationResponse(rsp)
+}
+
+// StartRegistrationWithResponse Start passkey registration
+//
+// Generate the options used by the browser to create a new passkey for the current user.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /passkeys/registration/start (the `StartRegistration` operationId).
+func (c *ClientWithResponses) StartRegistrationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StartRegistrationResponse, error) {
+	rsp, err := c.StartRegistration(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStartRegistrationResponse(rsp)
+}
+
+// DeletePasskeyWithResponse Delete a passkey
+//
+// Delete a passkey by its ID. The current user must own this passkey.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /passkeys/{id} (the `DeletePasskey` operationId).
+func (c *ClientWithResponses) DeletePasskeyWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeletePasskeyResponse, error) {
+	rsp, err := c.DeletePasskey(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeletePasskeyResponse(rsp)
+}
+
+// GetPasskeyWithResponse Retrieve a passkey
+//
+// Retrieve a passkey by its ID. The current user must own this passkey.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /passkeys/{id} (the `GetPasskey` operationId).
+func (c *ClientWithResponses) GetPasskeyWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetPasskeyResponse, error) {
+	rsp, err := c.GetPasskey(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPasskeyResponse(rsp)
+}
+
+// UpdatePasskeyWithBodyWithResponse Update a passkey
+//
+// Update the name of a passkey by its ID. The current user must own this passkey.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /passkeys/{id} (the `UpdatePasskey` operationId).
+func (c *ClientWithResponses) UpdatePasskeyWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdatePasskeyResponse, error) {
+	rsp, err := c.UpdatePasskeyWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdatePasskeyResponse(rsp)
+}
+
+// UpdatePasskeyWithResponse Update a passkey
+//
+// Update the name of a passkey by its ID. The current user must own this passkey.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /passkeys/{id} (the `UpdatePasskey` operationId).
+func (c *ClientWithResponses) UpdatePasskeyWithResponse(ctx context.Context, id openapi_types.UUID, body UpdatePasskeyJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdatePasskeyResponse, error) {
+	rsp, err := c.UpdatePasskey(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdatePasskeyResponse(rsp)
+}
+
 // DeletePeopleWithBodyWithResponse Delete people
 //
 // Bulk delete a list of people at once.
@@ -50745,8 +52054,6 @@ func (c *ClientWithResponses) GetPersonWithResponse(ctx context.Context, id open
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /people/{id} (the `UpdatePerson` operationId).
-//
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdatePersonWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdatePersonResponse, error) {
 	rsp, err := c.UpdatePersonWithBody(ctx, id, contentType, body, reqEditors...)
 	if err != nil {
@@ -50762,7 +52069,6 @@ func (c *ClientWithResponses) UpdatePersonWithBodyWithResponse(ctx context.Conte
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /people/{id} (the `UpdatePerson` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdatePersonWithResponse(ctx context.Context, id openapi_types.UUID, body UpdatePersonJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdatePersonResponse, error) {
 	rsp, err := c.UpdatePerson(ctx, id, body, reqEditors...)
 	if err != nil {
@@ -51582,8 +52888,6 @@ func (c *ClientWithResponses) DeleteSessionWithResponse(ctx context.Context, id 
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /sessions/{id} (the `UpdateSession` operationId).
-//
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateSessionWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateSessionResponse, error) {
 	rsp, err := c.UpdateSessionWithBody(ctx, id, contentType, body, reqEditors...)
 	if err != nil {
@@ -51599,7 +52903,6 @@ func (c *ClientWithResponses) UpdateSessionWithBodyWithResponse(ctx context.Cont
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /sessions/{id} (the `UpdateSession` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateSessionWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateSessionResponse, error) {
 	rsp, err := c.UpdateSession(ctx, id, body, reqEditors...)
 	if err != nil {
@@ -51945,8 +53248,6 @@ func (c *ClientWithResponses) GetStackWithResponse(ctx context.Context, id opena
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /stacks/{id} (the `UpdateStack` operationId).
-//
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateStackWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateStackResponse, error) {
 	rsp, err := c.UpdateStackWithBody(ctx, id, contentType, body, reqEditors...)
 	if err != nil {
@@ -51962,7 +53263,6 @@ func (c *ClientWithResponses) UpdateStackWithBodyWithResponse(ctx context.Contex
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /stacks/{id} (the `UpdateStack` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateStackWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateStackJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateStackResponse, error) {
 	rsp, err := c.UpdateStack(ctx, id, body, reqEditors...)
 	if err != nil {
@@ -52390,8 +53690,6 @@ func (c *ClientWithResponses) GetTagByIdWithResponse(ctx context.Context, id ope
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /tags/{id} (the `UpdateTag` operationId).
-//
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateTagWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateTagResponse, error) {
 	rsp, err := c.UpdateTagWithBody(ctx, id, contentType, body, reqEditors...)
 	if err != nil {
@@ -52407,7 +53705,6 @@ func (c *ClientWithResponses) UpdateTagWithBodyWithResponse(ctx context.Context,
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /tags/{id} (the `UpdateTag` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateTagWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateTagResponse, error) {
 	rsp, err := c.UpdateTag(ctx, id, body, reqEditors...)
 	if err != nil {
@@ -52603,8 +53900,6 @@ func (c *ClientWithResponses) GetMyUserWithResponse(ctx context.Context, reqEdit
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /users/me (the `UpdateMyUser` operationId).
-//
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateMyUserWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateMyUserResponse, error) {
 	rsp, err := c.UpdateMyUserWithBody(ctx, contentType, body, reqEditors...)
 	if err != nil {
@@ -52620,7 +53915,6 @@ func (c *ClientWithResponses) UpdateMyUserWithBodyWithResponse(ctx context.Conte
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /users/me (the `UpdateMyUser` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateMyUserWithResponse(ctx context.Context, body UpdateMyUserJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateMyUserResponse, error) {
 	rsp, err := c.UpdateMyUser(ctx, body, reqEditors...)
 	if err != nil {
@@ -52786,8 +54080,6 @@ func (c *ClientWithResponses) GetMyPreferencesWithResponse(ctx context.Context, 
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /users/me/preferences (the `UpdateMyPreferences` operationId).
-//
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateMyPreferencesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateMyPreferencesResponse, error) {
 	rsp, err := c.UpdateMyPreferencesWithBody(ctx, contentType, body, reqEditors...)
 	if err != nil {
@@ -52803,7 +54095,6 @@ func (c *ClientWithResponses) UpdateMyPreferencesWithBodyWithResponse(ctx contex
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /users/me/preferences (the `UpdateMyPreferences` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateMyPreferencesWithResponse(ctx context.Context, body UpdateMyPreferencesJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateMyPreferencesResponse, error) {
 	rsp, err := c.UpdateMyPreferences(ctx, body, reqEditors...)
 	if err != nil {
@@ -52999,8 +54290,6 @@ func (c *ClientWithResponses) GetWorkflowWithResponse(ctx context.Context, id op
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /workflows/{id} (the `UpdateWorkflow` operationId).
-//
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateWorkflowWithBodyWithResponse(ctx context.Context, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateWorkflowResponse, error) {
 	rsp, err := c.UpdateWorkflowWithBody(ctx, id, contentType, body, reqEditors...)
 	if err != nil {
@@ -53016,7 +54305,6 @@ func (c *ClientWithResponses) UpdateWorkflowWithBodyWithResponse(ctx context.Con
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /workflows/{id} (the `UpdateWorkflow` operationId).
-// Deprecated: this operation has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 func (c *ClientWithResponses) UpdateWorkflowWithResponse(ctx context.Context, id openapi_types.UUID, body UpdateWorkflowJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateWorkflowResponse, error) {
 	rsp, err := c.UpdateWorkflow(ctx, id, body, reqEditors...)
 	if err != nil {
@@ -56542,6 +57830,204 @@ func ParseUpdatePartnerResponse(rsp *http.Response) (*UpdatePartnerResponse, err
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest PartnerResponseDto
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSearchPasskeysResponse parses an HTTP response from a SearchPasskeysWithResponse call
+func ParseSearchPasskeysResponse(rsp *http.Response) (*SearchPasskeysResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SearchPasskeysResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []PasskeyResponseDto
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseFinishAuthenticationResponse parses an HTTP response from a FinishAuthenticationWithResponse call
+func ParseFinishAuthenticationResponse(rsp *http.Response) (*FinishAuthenticationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FinishAuthenticationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest LoginResponseDto
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStartAuthenticationResponse parses an HTTP response from a StartAuthenticationWithResponse call
+func ParseStartAuthenticationResponse(rsp *http.Response) (*StartAuthenticationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StartAuthenticationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PasskeyAuthenticationOptionsDto
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseFinishRegistrationResponse parses an HTTP response from a FinishRegistrationWithResponse call
+func ParseFinishRegistrationResponse(rsp *http.Response) (*FinishRegistrationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FinishRegistrationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest PasskeyResponseDto
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStartRegistrationResponse parses an HTTP response from a StartRegistrationWithResponse call
+func ParseStartRegistrationResponse(rsp *http.Response) (*StartRegistrationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StartRegistrationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PasskeyRegistrationOptionsDto
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeletePasskeyResponse parses an HTTP response from a DeletePasskeyWithResponse call
+func ParseDeletePasskeyResponse(rsp *http.Response) (*DeletePasskeyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeletePasskeyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseGetPasskeyResponse parses an HTTP response from a GetPasskeyWithResponse call
+func ParseGetPasskeyResponse(rsp *http.Response) (*GetPasskeyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPasskeyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PasskeyResponseDto
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdatePasskeyResponse parses an HTTP response from a UpdatePasskeyWithResponse call
+func ParseUpdatePasskeyResponse(rsp *http.Response) (*UpdatePasskeyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdatePasskeyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PasskeyResponseDto
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
